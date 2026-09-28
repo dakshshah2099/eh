@@ -1,0 +1,21 @@
+{
+  "name": "redaction-eval",
+  "version": "1.0.0",
+  "description": "End-to-end evaluation suite for on-device visual perception and redaction pipeline",
+  "type": "module",
+  "scripts": {
+    "test": "node run_redaction_eval.js",
+    "eval": "node run_redaction_eval.js"
+  },
+  "keywords": [
+    "privacy",
+    "redaction",
+    "evaluation",
+    "playwright"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}
