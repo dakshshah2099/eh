@@ -30,7 +30,7 @@ import {
   calculateIoU,
   nonMaxSuppression,
   runVisionInference
-} from './vision_inference.js';
+} from '../src/vision_inference.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -81,7 +81,7 @@ async function runAllTests() {
 
   // Test 1: Model file verification & <50MB size constraint
   console.log('Test 1: Verifying quantized model bundle & size constraint...');
-  const modelPath = path.join(__dirname, 'models/ui_detector_quantized.onnx');
+  const modelPath = path.join(__dirname, '../models/ui_detector_quantized.onnx');
   assert(fs.existsSync(modelPath), `Model file must exist at ${modelPath}`);
 
   const stat = fs.statSync(modelPath);

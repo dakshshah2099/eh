@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import http from 'node:http';
-import { buildPayload, sendPayloadToServer, checkServerHealth, DEFAULT_SERVER_URL } from './transport.js';
+import { buildPayload, sendPayloadToServer, checkServerHealth, DEFAULT_SERVER_URL } from '../src/transport.js';
 
 test('buildPayload normalizes input data conforming to FastAPI schema', () => {
   const input = {

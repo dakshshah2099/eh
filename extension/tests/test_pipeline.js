@@ -21,8 +21,8 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import zlib from 'node:zlib';
 
-import { executePipeline, assertPayloadSanitized } from './pipeline.js';
-import { REDACTION_TOKENS } from './dom_redaction.js';
+import { executePipeline, assertPayloadSanitized } from '../src/pipeline.js';
+import { REDACTION_TOKENS } from '../src/dom_redaction.js';
 
 /**
  * Creates an in-memory test PNG Data URL.

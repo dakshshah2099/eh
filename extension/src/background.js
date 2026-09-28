@@ -13,7 +13,7 @@ let agentState = {
 // Offscreen document singleton management
 let creatingOffscreenPromise = null;
 
-export async function ensureOffscreenDocument(path = 'offscreen.html') {
+export async function ensureOffscreenDocument(path = 'offscreen/offscreen.html') {
   if (typeof chrome.offscreen === 'undefined') {
     return false;
   }
@@ -165,7 +165,7 @@ export async function ensureContentScript(tabId) {
         console.log(`[Background] Injecting content script into tab ${tabId}...`);
         await chrome.scripting.executeScript({
           target: { tabId },
-          files: ['content_script.js']
+          files: ['src/content_script.js']
         });
         await new Promise(resolve => setTimeout(resolve, 150));
       } catch (e) {

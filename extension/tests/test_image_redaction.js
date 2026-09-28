@@ -23,7 +23,7 @@ import {
   normalizeBBox,
   DEFAULT_SOLID_CATEGORIES,
   DEFAULT_BLUR_CATEGORIES
-} from './image_redaction.js';
+} from '../src/image_redaction.js';
 
 /**
  * Creates a valid PNG Base64 Data URL from RGBA pixel buffer.

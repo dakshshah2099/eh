@@ -7,14 +7,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import http from 'node:http';
-import { executePipeline } from './pipeline.js';
+import { executePipeline } from '../src/pipeline.js';
 import {
   LatencyProfiler,
   defaultProfiler,
   LATENCY_BUDGET_MS,
   PROFILING_PHASES
-} from './profiler.js';
-import { REDACTION_TOKENS } from './dom_redaction.js';
+} from '../src/profiler.js';
+import { REDACTION_TOKENS } from '../src/dom_redaction.js';
 
 /**
  * Creates a mock canvas for benchmarking.
@@ -311,7 +311,7 @@ test('Background service worker exposes latency hooks and message dispatchers', 
   globalThis.chrome = mockChrome;
 
   try {
-    const bg = await import('./background.js');
+    const bg = await import('../src/background.js');
 
     // Run pipeline through background helper
     const result = await bg.captureAndSendPlan({

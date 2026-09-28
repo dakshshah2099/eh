@@ -33,7 +33,7 @@ import {
   nonMaxSuppression,
   extractFacialProposals,
   detectFaces
-} from './face_detector.js';
+} from '../src/face_detector.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -150,7 +150,7 @@ async function runAllTests() {
 
   // Test 1: Model file verification & <5MB constraint
   console.log('Test 1: Verifying BlazeFace ONNX model bundle & size constraint...');
-  const modelPath = path.join(__dirname, 'models/blazeface.onnx');
+  const modelPath = path.join(__dirname, '../models/blazeface.onnx');
   assert(fs.existsSync(modelPath), `Face model file must exist at ${modelPath}`);
 
   const stat = fs.statSync(modelPath);
@@ -329,7 +329,7 @@ async function runAllTests() {
 
   // Test 9: Offscreen document message handling
   console.log('Test 9: Verifying offscreen message handling integration...');
-  const offscreen = await import('./offscreen.js');
+  const offscreen = await import('../offscreen/offscreen.js');
   assert(offscreen, 'offscreen.js must be importable');
   assert(typeof offscreen.detectFaces === 'function', 'offscreen must export detectFaces');
   assert(typeof offscreen.loadFaceModel === 'function', 'offscreen must export loadFaceModel');

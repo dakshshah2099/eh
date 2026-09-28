@@ -81,7 +81,7 @@ globalThis.OffscreenCanvas = class {
   }
 };
 
-const bg = await import('./background.js');
+const bg = await import('../src/background.js');
 
 test('waitForDomSettle completes successfully with delay', async () => {
   const start = Date.now();

@@ -20,7 +20,7 @@ import {
   SENSITIVE_CATEGORIES,
   SENSITIVE_DOM_REGEX,
   AUTOCOMPLETE_PATTERNS
-} from './dom_detector.js';
+} from '../src/dom_detector.js';
 
 test('DOM Detector: Rule 1 - input[type=password] -> category: password', () => {
   const skeleton = {
@@ -425,7 +425,7 @@ test('DOM Detector: Custom categorization options (telCategory, pinCategory, tax
 
 test('DOM Detector: Integration with extractDomSkeleton from content_script', () => {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const contentScriptSource = fs.readFileSync(path.join(__dirname, 'content_script.js'), 'utf8');
+  const contentScriptSource = fs.readFileSync(path.join(__dirname, '../src/content_script.js'), 'utf8');
 
   // Create isolated mock DOM environment
   const sandbox = {

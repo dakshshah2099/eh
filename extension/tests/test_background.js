@@ -102,7 +102,7 @@ globalThis.OffscreenCanvas = class {
 };
 
 // Now import background module
-const bg = await import('./background.js');
+const bg = await import('../src/background.js');
 
 test('background.js exports transport and planning utilities', () => {
   assert.equal(typeof bg.sendPayloadToServer, 'function');

@@ -1,8 +1,8 @@
-import * as ort from './vendor/ort/ort.all.min.mjs';
-import * as transformers from './vendor/transformers/transformers.min.js';
-import { downscaleImage } from './downscale.js';
-import { runVisionInference, loadVisionModel, getVisionSession } from './vision_inference.js';
-import { detectFaces, loadFaceModel, getFaceSession } from './face_detector.js';
+import * as ort from '../vendor/ort/ort.all.min.mjs';
+import * as transformers from '../vendor/transformers/transformers.min.js';
+import { downscaleImage } from '../src/downscale.js';
+import { runVisionInference, loadVisionModel, getVisionSession } from '../src/vision_inference.js';
+import { detectFaces, loadFaceModel, getFaceSession } from '../src/face_detector.js';
 
 export { runVisionInference, loadVisionModel, getVisionSession };
 export { detectFaces, loadFaceModel, getFaceSession };
@@ -18,7 +18,7 @@ export function getWasmPath() {
   if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
     return chrome.runtime.getURL('vendor/ort/');
   }
-  return './vendor/ort/';
+  return '../vendor/ort/';
 }
 
 const wasmPath = getWasmPath();

@@ -18,8 +18,8 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
-import { executePipeline } from '../extension/pipeline.js';
-import { REDACTION_TOKENS } from '../extension/dom_redaction.js';
+import { executePipeline } from '../extension/src/pipeline.js';
+import { REDACTION_TOKENS } from '../extension/src/dom_redaction.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -314,7 +314,7 @@ export async function runEvaluation() {
     console.log(`[Step 4] Seeded manifest verified: ${manifest.entities.length} entities, ${manifest.rawTokens.length} raw string tokens.\n`);
 
     // Inject and execute content script DOM skeleton extraction
-    const contentScriptCode = fs.readFileSync(path.join(EXTENSION_DIR, 'content_script.js'), 'utf8');
+    const contentScriptCode = fs.readFileSync(path.join(EXTENSION_DIR, 'src', 'content_script.js'), 'utf8');
     await page.evaluate(contentScriptCode);
 
     const skeletonEnvelope = await page.evaluate(() => {

@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-09-28T04:18:39.389Z",
-  "durationMs": 2012,
+  "timestamp": "2026-09-28T14:45:31.439Z",
+  "durationMs": 2848,
   "testHarness": {
-    "demoUrl": "http://127.0.0.1:60107/index.html",
+    "demoUrl": "http://127.0.0.1:2706/index.html",
     "pageTitle": "On-Device Visual Perception - Demo & Test Harness",
     "viewport": {
       "width": 1280,
@@ -99,7 +99,7 @@
       "redacted": true,
       "textLeaked": false,
       "visualObscured": true,
-      "obscurationMethod": "gaussian_blur_or_pixelation",
+      "obscurationMethod": "solid_black_mask",
       "status": "PASS"
     },
     {
@@ -132,7 +132,7 @@
       "redacted": true,
       "textLeaked": false,
       "visualObscured": true,
-      "obscurationMethod": "gaussian_blur_or_pixelation",
+      "obscurationMethod": "solid_black_mask",
       "status": "PASS"
     },
     {
@@ -165,7 +165,7 @@
       "redacted": true,
       "textLeaked": false,
       "visualObscured": true,
-      "obscurationMethod": "redaction_mapped",
+      "obscurationMethod": "solid_black_mask",
       "status": "PASS"
     },
     {
@@ -176,7 +176,7 @@
       "redacted": true,
       "textLeaked": false,
       "visualObscured": true,
-      "obscurationMethod": "gaussian_blur_or_pixelation",
+      "obscurationMethod": "solid_black_mask",
       "status": "PASS"
     },
     {
@@ -187,7 +187,7 @@
       "redacted": true,
       "textLeaked": false,
       "visualObscured": true,
-      "obscurationMethod": "redaction_mapped",
+      "obscurationMethod": "solid_black_mask",
       "status": "PASS"
     },
     {
@@ -198,7 +198,7 @@
       "redacted": true,
       "textLeaked": false,
       "visualObscured": true,
-      "obscurationMethod": "redaction_mapped",
+      "obscurationMethod": "solid_black_mask",
       "status": "PASS"
     },
     {
@@ -258,7 +258,7 @@
     },
     "totalVisualEntities": 12,
     "visualObscuredCount": 12,
-    "solidBlackMaskCount": 2,
+    "solidBlackMaskCount": 1,
     "blurOrPixelationCount": 1,
     "results": [
       {
@@ -276,11 +276,11 @@
           323,
           23
         ],
-        "solidCovered": false,
-        "blurCovered": true,
+        "solidCovered": true,
+        "blurCovered": false,
         "mappedInRedactionMap": true,
         "obscured": true,
-        "method": "gaussian_blur_or_pixelation"
+        "method": "solid_black_mask"
       },
       {
         "selector": "#userPassword",
@@ -339,11 +339,11 @@
           233,
           23
         ],
-        "solidCovered": false,
-        "blurCovered": true,
+        "solidCovered": true,
+        "blurCovered": false,
         "mappedInRedactionMap": true,
         "obscured": true,
-        "method": "gaussian_blur_or_pixelation"
+        "method": "solid_black_mask"
       },
       {
         "selector": "#phoneNumber",
@@ -402,11 +402,11 @@
           323,
           23
         ],
-        "solidCovered": false,
-        "blurCovered": false,
+        "solidCovered": true,
+        "blurCovered": true,
         "mappedInRedactionMap": true,
         "obscured": true,
-        "method": "redaction_mapped"
+        "method": "solid_black_mask"
       },
       {
         "selector": "#cardCvv",
@@ -423,11 +423,11 @@
           158,
           23
         ],
-        "solidCovered": false,
+        "solidCovered": true,
         "blurCovered": true,
         "mappedInRedactionMap": true,
         "obscured": true,
-        "method": "gaussian_blur_or_pixelation"
+        "method": "solid_black_mask"
       },
       {
         "selector": "#bankAccount",
@@ -444,11 +444,11 @@
           158,
           23
         ],
-        "solidCovered": false,
+        "solidCovered": true,
         "blurCovered": false,
         "mappedInRedactionMap": true,
         "obscured": true,
-        "method": "redaction_mapped"
+        "method": "solid_black_mask"
       },
       {
         "selector": "#routingNumber",
@@ -465,11 +465,11 @@
           158,
           23
         ],
-        "solidCovered": false,
-        "blurCovered": false,
+        "solidCovered": true,
+        "blurCovered": true,
         "mappedInRedactionMap": true,
         "obscured": true,
-        "method": "redaction_mapped"
+        "method": "solid_black_mask"
       },
       {
         "selector": "#streetAddress",
@@ -508,7 +508,7 @@
           78
         ],
         "solidCovered": true,
-        "blurCovered": true,
+        "blurCovered": false,
         "mappedInRedactionMap": true,
         "obscured": true,
         "method": "solid_black_mask"
@@ -517,26 +517,15 @@
   },
   "pipelineInterceptedPayload": {
     "task": "Securely audit profile and submit sanitized transaction",
-    "serverUrl": "http://127.0.0.1:60108/api/plan",
-    "redactionMapCount": 25,
+    "serverUrl": "http://127.0.0.1:2707/api/plan",
+    "redactionMapCount": 5,
     "redactionMap": [
       {
         "bbox": [
-          65,
-          387,
-          538,
-          39
-        ],
-        "category": "email",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          65,
-          469,
-          263,
-          39
+          40,
+          279,
+          588,
+          269
         ],
         "category": "password",
         "source": "dom",
@@ -544,21 +533,10 @@
       },
       {
         "bbox": [
-          340,
-          469,
-          263,
-          39
-        ],
-        "category": "password",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          677,
-          571,
-          538,
-          39
+          652,
+          279,
+          588,
+          535
         ],
         "category": "card",
         "source": "dom",
@@ -566,10 +544,10 @@
       },
       {
         "bbox": [
-          677,
-          653,
-          263,
-          39
+          40,
+          573,
+          588,
+          513
         ],
         "category": "card",
         "source": "dom",
@@ -577,10 +555,10 @@
       },
       {
         "bbox": [
-          952,
-          653,
-          263,
-          39
+          652,
+          838,
+          588,
+          499
         ],
         "category": "card",
         "source": "dom",
@@ -588,210 +566,12 @@
       },
       {
         "bbox": [
-          65,
-          659,
-          130,
-          130
-        ],
-        "category": "face",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          215,
-          681,
-          388,
-          39
-        ],
-        "category": "name",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          677,
-          734,
-          263,
-          39
+          40,
+          1361,
+          1200,
+          224
         ],
         "category": "card",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          952,
-          734,
-          263,
-          39
-        ],
-        "category": "card",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          215,
-          754,
-          388,
-          39
-        ],
-        "category": "phone",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          65,
-          839,
-          263,
-          39
-        ],
-        "category": "ssn",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          340,
-          839,
-          263,
-          42
-        ],
-        "category": "pii",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          65,
-          924,
-          538,
-          39
-        ],
-        "category": "pii",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          740,
-          985,
-          93,
-          20
-        ],
-        "category": "name",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          877,
-          985,
-          73,
-          20
-        ],
-        "category": "pii",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          990,
-          985,
-          81,
-          20
-        ],
-        "category": "ssn",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          65,
-          1005,
-          257,
-          39
-        ],
-        "category": "pii",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          334,
-          1005,
-          129,
-          39
-        ],
-        "category": "pii",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          475,
-          1005,
-          129,
-          39
-        ],
-        "category": "pii",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          862,
-          1039,
-          118,
-          20
-        ],
-        "category": "phone",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          692,
-          1062,
-          258,
-          20
-        ],
-        "category": "email",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          906,
-          1093,
-          285,
-          20
-        ],
-        "category": "pii",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          883,
-          1116,
-          136,
-          20
-        ],
-        "category": "card",
-        "source": "dom",
-        "confidence": 1
-      },
-      {
-        "bbox": [
-          677,
-          1196,
-          538,
-          94
-        ],
-        "category": "free-text",
         "source": "dom",
         "confidence": 1
       }

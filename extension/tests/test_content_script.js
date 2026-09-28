@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const scriptSource = fs.readFileSync(path.join(__dirname, 'content_script.js'), 'utf8');
+const scriptSource = fs.readFileSync(path.join(__dirname, '../src/content_script.js'), 'utf8');
 
 function createContext(extraGlobals = {}) {
   const sandbox = {

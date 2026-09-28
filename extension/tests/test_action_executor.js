@@ -9,7 +9,7 @@ import {
   isSensitiveField,
   executeAction,
   executeActions
-} from './action_executor.js';
+} from '../src/action_executor.js';
 
 function createMockElement({
   tagName = 'div',

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { calculateTargetDimensions, blobToBase64 } from './downscale.js';
+import { calculateTargetDimensions, blobToBase64 } from '../src/downscale.js';
 
 // Test 1: Calculate target dimensions for landscape image > 768px
 {

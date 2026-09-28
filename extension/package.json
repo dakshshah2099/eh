@@ -4,16 +4,16 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "node test-onnx-runtime.js && node test_vision_inference.js && node test_face_detector.js",
-    "test:onnx": "node test-onnx-runtime.js",
-    "test:vision": "node test_vision_inference.js",
-    "test:face": "node test_face_detector.js",
-    "test:dom": "node test_dom_detector.js",
-    "test:merger": "node test_region_merger.js",
-    "test:redaction": "node test_dom_redaction.js",
-    "test:image-redaction": "node test_image_redaction.js",
-    "test:pipeline": "node --test test_pipeline.js",
-    "test:latency": "node test_latency_profiling.js"
+    "test": "node tests/test-onnx-runtime.js && node tests/test_vision_inference.js && node tests/test_face_detector.js",
+    "test:onnx": "node tests/test-onnx-runtime.js",
+    "test:vision": "node tests/test_vision_inference.js",
+    "test:face": "node tests/test_face_detector.js",
+    "test:dom": "node tests/test_dom_detector.js",
+    "test:merger": "node tests/test_region_merger.js",
+    "test:redaction": "node tests/test_dom_redaction.js",
+    "test:image-redaction": "node tests/test_image_redaction.js",
+    "test:pipeline": "node --test tests/test_pipeline.js",
+    "test:latency": "node tests/test_latency_profiling.js"
   },
   "dependencies": {
     "@xenova/transformers": "^2.17.2",

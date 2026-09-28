@@ -16,7 +16,7 @@ import {
   REDACTION_TOKENS,
   DEFAULT_CATEGORY_TOKEN_MAP,
   DEFAULT_CATEGORY_PRIORITY
-} from './dom_redaction.js';
+} from '../src/dom_redaction.js';
 
 test('DOM Redaction: Exported tokens match specification', () => {
   assert.equal(REDACTION_TOKENS.PASSWORD, '[REDACTED_PASSWORD]');

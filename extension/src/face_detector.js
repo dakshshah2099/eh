@@ -1,15 +1,13 @@
 /**
- * Vision Model Inference for Privacy Lens Agent.
- * Runs on-device quantized UI element detection using ONNX Runtime Web / Transformers.js.
+ * CV-Level Face Detector for Privacy Lens Agent.
+ * Runs on-device face detection using BlazeFace / lightweight ONNX face detector (<5MB)
+ * via ONNX Runtime Web / Transformers.js setup (using WebGPU with WASM fallback).
  * 
- * Supports:
- * - Quantized INT8 model (<50MB) loaded into browser memory
- * - WebGPU backend with automatic WASM fallback
- * - Inputs: HTMLCanvasElement, OffscreenCanvas, ImageData, Base64 data URL, or raw Base64 string
- * - Outputs: [{ bbox: [x,y,w,h], label: 'button'|'input'|'icon'|'text', confidence: float }]
+ * Returns standard sensitive face regions:
+ * [{ bbox: [x, y, w, h], category: 'face', source: 'cv', confidence: float }]
  */
 
-import * as ortModule from './vendor/ort/ort.all.min.mjs';
+import * as ortModule from '../vendor/ort/ort.all.min.mjs';
 
 // Resolve global self for worker / node compatibility
 if (typeof globalThis.self === 'undefined') {
@@ -28,7 +26,7 @@ export async function getTransformers() {
     globalThis.self = globalThis;
   }
   if (!transformersInstance) {
-    const mod = await import('./vendor/transformers/transformers.min.js');
+    const mod = await import('../vendor/transformers/transformers.min.js');
     transformersInstance = mod.default || mod;
     if (transformersInstance?.env) {
       transformersInstance.env.allowLocalModels = true;
@@ -44,19 +42,14 @@ export async function getTransformers() {
 }
 
 /**
- * Standard UI element class labels recognized by the detector.
+ * Maximum allowable model size for face detector (<5MB constraint).
  */
-export const CLASS_LABELS = ['button', 'input', 'icon', 'text'];
+export const MAX_FACE_MODEL_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 /**
- * Model size limit in bytes (50 MB).
+ * Default input resolution for BlazeFace ONNX detector.
  */
-export const MAX_MODEL_SIZE_BYTES = 50 * 1024 * 1024;
-
-/**
- * Default input resolution for the quantized UI element detector model.
- */
-export const DEFAULT_MODEL_DIMS = { width: 256, height: 256, channels: 3 };
+export const DEFAULT_FACE_MODEL_DIMS = { width: 128, height: 128, channels: 3 };
 
 /**
  * Resolve WASM asset directory for ONNX Runtime Web.
@@ -143,11 +136,11 @@ export async function detectBackend() {
   };
 }
 
-let activeSession = null;
-let activeSessionMeta = null;
+let activeFaceSession = null;
+let activeFaceSessionMeta = null;
 
 /**
- * Resolves the model binary as an ArrayBuffer.
+ * Resolves the face model binary as an ArrayBuffer.
  */
 async function fetchModelBuffer(modelSource) {
   if (modelSource instanceof ArrayBuffer) {
@@ -160,9 +153,9 @@ async function fetchModelBuffer(modelSource) {
   let resolvedPath = modelSource;
   if (!resolvedPath) {
     if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
-      resolvedPath = chrome.runtime.getURL('models/ui_detector_quantized.onnx');
+      resolvedPath = chrome.runtime.getURL('models/blazeface.onnx');
     } else {
-      resolvedPath = './models/ui_detector_quantized.onnx';
+      resolvedPath = '../models/blazeface.onnx';
     }
   }
 
@@ -172,13 +165,12 @@ async function fetchModelBuffer(modelSource) {
     const path = await import('node:path');
     let filePath = resolvedPath;
     if (!path.isAbsolute(filePath)) {
-      filePath = path.resolve(process.cwd(), filePath);
-      if (!fs.existsSync(filePath)) {
-        const extensionDir = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
-        const altPath = path.join(extensionDir, resolvedPath.replace(/^\.\//, ''));
-        if (fs.existsSync(altPath)) {
-          filePath = altPath;
-        }
+      const extensionDir = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+      const altPath = path.resolve(extensionDir, resolvedPath);
+      if (fs.existsSync(altPath)) {
+        filePath = altPath;
+      } else {
+        filePath = path.resolve(process.cwd(), filePath);
       }
     }
     const buf = fs.readFileSync(filePath);
@@ -188,26 +180,26 @@ async function fetchModelBuffer(modelSource) {
   // Fetch via HTTP/extension URL
   const response = await fetch(resolvedPath);
   if (!response.ok) {
-    throw new Error(`Failed to load vision model from ${resolvedPath}: HTTP ${response.status}`);
+    throw new Error(`Failed to load face model from ${resolvedPath}: HTTP ${response.status}`);
   }
   return await response.arrayBuffer();
 }
 
 /**
- * Loads the quantized UI element detector model into memory.
- * Uses WebGPU backend with WASM fallback. Verifies model size < 50MB.
+ * Loads the BlazeFace / lightweight ONNX face detector (<5MB) into memory.
+ * Uses WebGPU backend with automatic WASM fallback.
  *
  * @param {object} [options={}]
  * @param {string|ArrayBuffer|Uint8Array} [options.modelSource]
  * @param {'webgpu'|'wasm'|'auto'} [options.backend='auto']
  * @returns {Promise<{ session: ort.InferenceSession, backend: string, modelSize: number }>}
  */
-export async function loadVisionModel(options = {}) {
+export async function loadFaceModel(options = {}) {
   const modelBuffer = await fetchModelBuffer(options.modelSource);
   const modelSize = modelBuffer.byteLength;
 
-  if (modelSize > MAX_MODEL_SIZE_BYTES) {
-    throw new Error(`Model size ${(modelSize / 1024 / 1024).toFixed(2)}MB exceeds maximum allowable limit of 50MB`);
+  if (modelSize > MAX_FACE_MODEL_SIZE_BYTES) {
+    throw new Error(`Face model size ${(modelSize / 1024 / 1024).toFixed(2)}MB exceeds maximum allowable limit of 5MB`);
   }
 
   let requestedBackend = options.backend || 'auto';
@@ -233,7 +225,7 @@ export async function loadVisionModel(options = {}) {
     session = await ort.InferenceSession.create(modelBuffer, { executionProviders });
   } catch (err) {
     if (executionProviders.includes('webgpu')) {
-      console.warn('[VisionInference] WebGPU provider failed, falling back to WASM provider:', err.message);
+      console.warn('[FaceDetector] WebGPU provider failed, falling back to WASM provider:', err.message);
       session = await ort.InferenceSession.create(modelBuffer, { executionProviders: ['wasm'] });
       finalBackend = 'wasm';
     } else {
@@ -241,8 +233,8 @@ export async function loadVisionModel(options = {}) {
     }
   }
 
-  activeSession = session;
-  activeSessionMeta = {
+  activeFaceSession = session;
+  activeFaceSessionMeta = {
     session,
     backend: finalBackend,
     modelSize,
@@ -251,22 +243,22 @@ export async function loadVisionModel(options = {}) {
     timestamp: Date.now()
   };
 
-  return activeSessionMeta;
+  return activeFaceSessionMeta;
 }
 
 /**
- * Returns current active vision session or null.
+ * Returns current active face detector session or null.
  */
-export function getVisionSession() {
-  return activeSessionMeta;
+export function getFaceSession() {
+  return activeFaceSessionMeta;
 }
 
 /**
- * Resets cached vision model session.
+ * Resets cached face detector session.
  */
-export function resetVisionSession() {
-  activeSession = null;
-  activeSessionMeta = null;
+export function resetFaceSession() {
+  activeFaceSession = null;
+  activeFaceSessionMeta = null;
 }
 
 /**
@@ -343,6 +335,9 @@ export async function parseImageInput(input) {
     // Node.js Buffer parsing
     if (typeof Buffer !== 'undefined') {
       const buf = Buffer.from(cleanBase64, 'base64');
+      if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x4E && buf[2] === 0x47) {
+        // PNG magic bytes
+      }
       if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) {
         const zlib = await import('node:zlib');
         let pos = 8;
@@ -426,9 +421,9 @@ export async function parseImageInput(input) {
 }
 
 /**
- * Preprocesses image into a CHW normalized Float32 tensor for model inference.
+ * Preprocesses image into a CHW normalized Float32 tensor for BlazeFace inference.
  */
-export async function preprocessImage(imageInput, targetWidth = 256, targetHeight = 256) {
+export async function preprocessFaceImage(imageInput, targetWidth = 128, targetHeight = 128) {
   const { width: origWidth, height: origHeight, data: srcData } = await parseImageInput(imageInput);
 
   const tensorData = new Float32Array(3 * targetWidth * targetHeight);
@@ -447,6 +442,7 @@ export async function preprocessImage(imageInput, targetWidth = 256, targetHeigh
       const srcIdx = (srcRowOffset + sx) * 4;
       const dstIdx = dstRowOffset + tx;
 
+      // Normalize RGB to [0.0, 1.0]
       tensorData[dstIdx] = srcData[srcIdx] / 255.0;                      // R
       tensorData[planeSize + dstIdx] = srcData[srcIdx + 1] / 255.0;      // G
       tensorData[2 * planeSize + dstIdx] = srcData[srcIdx + 2] / 255.0;  // B
@@ -490,9 +486,9 @@ export function calculateIoU(boxA, boxB) {
 }
 
 /**
- * Applies Non-Maximum Suppression (NMS) to eliminate duplicate detections.
+ * Applies Non-Maximum Suppression (NMS) to eliminate duplicate face detections.
  */
-export function nonMaxSuppression(candidates, iouThreshold = 0.45) {
+export function nonMaxSuppression(candidates, iouThreshold = 0.35) {
   if (!candidates || candidates.length === 0) return [];
 
   const sorted = [...candidates].sort((a, b) => b.confidence - a.confidence);
@@ -520,42 +516,62 @@ export function nonMaxSuppression(candidates, iouThreshold = 0.45) {
 }
 
 /**
- * Extracts connected UI candidate regions from raw image pixels.
- * Locates buttons, text fields, icons, and text rows by edge and contrast boundaries.
+ * Evaluates whether pixel (R, G, B) matches human skin chromaticity.
+ * Cross-ethnicity skin locus in RGB/luminance space.
  */
-function extractVisualProposals(rawImageData, maxProposals = 32) {
+function isSkinPixel(r, g, b) {
+  if (r < 50 || g < 30 || b < 20) return false;
+  if (r <= g || r <= b) return false;
+  if ((r - g) < 12) return false;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if ((max - min) < 15) return false;
+  return true;
+}
+
+/**
+ * Extracts candidate human face bounding box regions using skin-tone chrominance
+ * and facial feature topology (upper facial contrast for eyes, lower for mouth).
+ */
+export function extractFacialProposals(rawImageData, maxProposals = 16) {
   const { width, height, data } = rawImageData;
-  if (width < 8 || height < 8) return [];
+  if (width < 16 || height < 16) return [];
 
-  const candidates = [];
-  const visited = new Uint8Array(width * height);
+  const skinMap = new Uint8Array(width * height);
+  let skinCount = 0;
 
-  const lum = new Uint8Array(width * height);
   for (let y = 0; y < height; y++) {
     const rowOffset = y * width;
     for (let x = 0; x < width; x++) {
       const idx = (rowOffset + x) * 4;
-      lum[rowOffset + x] = Math.round(0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]);
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      if (isSkinPixel(r, g, b)) {
+        skinMap[rowOffset + x] = 1;
+        skinCount++;
+      }
     }
   }
+
+  if (skinCount < 30) return [];
+
+  const visited = new Uint8Array(width * height);
+  const proposals = [];
 
   const stepY = Math.max(2, Math.floor(height / 64));
   const stepX = Math.max(2, Math.floor(width / 64));
 
   for (let y = 2; y < height - 2; y += stepY) {
     for (let x = 2; x < width - 2; x += stepX) {
-      const c = lum[y * width + x];
-      const right = lum[y * width + x + 1];
-      const down = lum[(y + 1) * width + x];
-
-      const diff = Math.max(Math.abs(c - right), Math.abs(c - down));
-      if (diff > 35 && !visited[y * width + x]) {
+      const pIdx = y * width + x;
+      if (skinMap[pIdx] && !visited[pIdx]) {
         let minX = x, maxX = x, minY = y, maxY = y;
-        const stack = [[x, y]];
-        visited[y * width + x] = 1;
         let count = 0;
+        const stack = [[x, y]];
+        visited[pIdx] = 1;
 
-        while (stack.length > 0 && count < 800) {
+        while (stack.length > 0 && count < 15000) {
           const [cx, cy] = stack.pop();
           count++;
           if (cx < minX) minX = cx;
@@ -566,10 +582,10 @@ function extractVisualProposals(rawImageData, maxProposals = 32) {
           const neighbors = [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]];
           for (let n = 0; n < neighbors.length; n++) {
             const [nx, ny] = neighbors[n];
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height && !visited[ny * width + nx]) {
-              const ndiff = Math.abs(lum[ny * width + nx] - c);
-              if (ndiff < 45) {
-                visited[ny * width + nx] = 1;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+              const nIdx = ny * width + nx;
+              if (skinMap[nIdx] && !visited[nIdx]) {
+                visited[nIdx] = 1;
                 stack.push([nx, ny]);
               }
             }
@@ -579,61 +595,133 @@ function extractVisualProposals(rawImageData, maxProposals = 32) {
         const bw = maxX - minX + 1;
         const bh = maxY - minY + 1;
 
-        if (bw >= 12 && bh >= 10 && bw < width * 0.95 && bh < height * 0.95) {
+        // Face bounding box aspect ratio: typical face height >= width, aspect ratio 0.6 to 1.5
+        if (bw >= 14 && bh >= 14 && count >= 50) {
           const aspect = bw / bh;
-          let label = 'button';
-          if (aspect >= 3.0 && bh <= 45) {
-            label = 'input';
-          } else if (aspect >= 0.8 && aspect <= 1.3 && bw <= 48 && bh <= 48) {
-            label = 'icon';
-          } else if (aspect > 4.0 || bh <= 18) {
-            label = 'text';
+          if (aspect >= 0.55 && aspect <= 1.45) {
+            // Check facial internal contrast: presence of darker eyes/mouth
+            let darkPixels = 0;
+            const totalSampled = Math.max(1, Math.floor(bw * bh / 4));
+            for (let sy = minY; sy <= maxY; sy += 2) {
+              const row = sy * width;
+              for (let sx = minX; sx <= maxX; sx += 2) {
+                const sIdx = (row + sx) * 4;
+                const lum = 0.299 * data[sIdx] + 0.587 * data[sIdx + 1] + 0.114 * data[sIdx + 2];
+                if (lum < 110) {
+                  darkPixels++;
+                }
+              }
+            }
+
+            const fillRatio = count / (bw * bh);
+            const contrastRatio = darkPixels / totalSampled;
+            // Valid face profile has oval fill and moderate eye/mouth contrast
+            if (fillRatio >= 0.35 && fillRatio <= 0.95) {
+              let confidence = 0.82;
+              if (contrastRatio >= 0.05 && contrastRatio <= 0.60) {
+                confidence += 0.12; // Boost confidence for eyes/features
+              }
+              confidence = Math.min(0.98, Number(confidence.toFixed(4)));
+
+              proposals.push({
+                bbox: [minX, minY, bw, bh],
+                category: 'face',
+                source: 'cv',
+                confidence
+              });
+
+              if (proposals.length >= maxProposals) return proposals;
+            }
           }
-
-          const confidence = Math.min(0.96, Math.max(0.65, 0.70 + (diff / 255.0) * 0.25));
-          candidates.push({
-            bbox: [minX, minY, bw, bh],
-            label,
-            confidence: Number(confidence.toFixed(4))
-          });
-
-          if (candidates.length >= maxProposals) return candidates;
         }
       }
     }
   }
 
-  return candidates;
+  return proposals;
 }
 
 /**
- * Runs vision model inference on downscaled canvas image or base64.
- * 
+ * Detects human faces on image canvas or base64 and returns standardized detections:
+ * [{ bbox: [x,y,w,h], category: 'face', source: 'cv', confidence: float }]
+ *
  * @param {HTMLCanvasElement|OffscreenCanvas|ImageData|string|object} imageCanvasOrBase64
  * @param {object} [options={}]
- * @param {number} [options.confidenceThreshold=0.25] - Minimum confidence to accept a detection
- * @param {number} [options.iouThreshold=0.45] - Non-Maximum Suppression IoU threshold
+ * @param {number} [options.confidenceThreshold=0.25] - Minimum confidence to accept face
+ * @param {number} [options.iouThreshold=0.35] - NMS IoU threshold
  * @param {string|ArrayBuffer} [options.modelSource] - Custom model source
- * @param {'webgpu'|'wasm'|'auto'} [options.backend='auto'] - Desired backend
- * @returns {Promise<Array<{ bbox: [number, number, number, number], label: 'button'|'input'|'icon'|'text', confidence: number }>>}
+ * @param {'webgpu'|'wasm'|'auto'} [options.backend='auto'] - Execution backend
+ * @returns {Promise<Array<{ bbox: [number, number, number, number], category: 'face', source: 'cv', confidence: number }>>}
  */
-export async function runVisionInference(imageCanvasOrBase64, options = {}) {
-  const minConfidence = typeof options.confidenceThreshold === 'number' ? options.confidenceThreshold : 0.25;
-  const iouThreshold = typeof options.iouThreshold === 'number' ? options.iouThreshold : 0.45;
+export async function detectFaces(imageCanvasOrBase64, options = {}) {
+  const minConfidence = typeof options.confidenceThreshold === 'number'
+    ? options.confidenceThreshold
+    : (typeof options.minConfidence === 'number' ? options.minConfidence : 0.5);
+  const iouThreshold = typeof options.iouThreshold === 'number' ? options.iouThreshold : 0.35;
 
-  if (!activeSession) {
-    await loadVisionModel(options);
+  const isServiceWorker = typeof ServiceWorkerGlobalScope !== 'undefined' && self instanceof ServiceWorkerGlobalScope;
+  if (isServiceWorker && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+    try {
+      const imgSource = typeof imageCanvasOrBase64 === 'string'
+        ? imageCanvasOrBase64
+        : (typeof imageCanvasOrBase64?.toDataURL === 'function' ? imageCanvasOrBase64.toDataURL() : '');
+      if (imgSource) {
+        const offscreenResult = await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { target: 'offscreen', type: 'DETECT_FACES', imageSource: imgSource, options },
+            (response) => {
+              if (chrome.runtime.lastError || !response?.success) {
+                resolve(null);
+              } else {
+                resolve(response.detections || []);
+              }
+            }
+          );
+        });
+        if (Array.isArray(offscreenResult)) {
+          return offscreenResult;
+        }
+      }
+    } catch (_) {}
   }
 
-  const { inputTensor, origWidth, origHeight, rawImageData } = await preprocessImage(
+  if (!activeFaceSession) {
+    if (isServiceWorker) {
+      // In ServiceWorkerGlobalScope, dynamic import is prohibited by browser specs. Use algorithmic detection.
+      try {
+        const parsed = await parseImageInput(imageCanvasOrBase64);
+        if (parsed) {
+          const proposals = extractFacialProposals(parsed);
+          return nonMaxSuppression(proposals.filter(p => p.confidence >= minConfidence), iouThreshold);
+        }
+      } catch (_) {}
+      return [];
+    }
+
+    try {
+      await loadFaceModel(options);
+    } catch (err) {
+      console.warn('[FaceDetector] Could not load ONNX model in current context, using algorithmic facial proposal fallback:', err.message);
+      try {
+        const parsed = await parseImageInput(imageCanvasOrBase64);
+        if (parsed) {
+          const proposals = extractFacialProposals(parsed);
+          return nonMaxSuppression(proposals.filter(p => p.confidence >= minConfidence), iouThreshold);
+        }
+      } catch (_) {}
+      return [];
+    }
+  }
+
+  const { inputTensor, origWidth, origHeight, rawImageData } = await preprocessFaceImage(
     imageCanvasOrBase64,
-    DEFAULT_MODEL_DIMS.width,
-    DEFAULT_MODEL_DIMS.height
+    DEFAULT_FACE_MODEL_DIMS.width,
+    DEFAULT_FACE_MODEL_DIMS.height
   );
 
-  const inputName = activeSession.inputNames[0] || 'images';
+  const inputName = activeFaceSession.inputNames[0] || 'images';
   const feeds = { [inputName]: inputTensor };
-  const outputs = await activeSession.run(feeds);
+  const outputs = await activeFaceSession.run(feeds);
 
   const candidates = [];
 
@@ -641,88 +729,44 @@ export async function runVisionInference(imageCanvasOrBase64, options = {}) {
   if (outputs.boxes && outputs.scores) {
     const boxesData = outputs.boxes.data;
     const scoresData = outputs.scores.data;
-    const numBoxes = outputs.boxes.dims[1] || Math.floor(boxesData.length / 4);
+    const numAnchors = outputs.boxes.dims[1] || Math.floor(boxesData.length / 4);
 
-    for (let i = 0; i < numBoxes; i++) {
+    for (let i = 0; i < numAnchors; i++) {
       const bOffset = i * 4;
-      const sOffset = i * 4;
+      const score = scoresData[i];
 
-      const cx = boxesData[bOffset];
-      const cy = boxesData[bOffset + 1];
-      const bw = boxesData[bOffset + 2];
-      const bh = boxesData[bOffset + 3];
+      if (score >= minConfidence) {
+        const cx = boxesData[bOffset];
+        const cy = boxesData[bOffset + 1];
+        const bw = boxesData[bOffset + 2];
+        const bh = boxesData[bOffset + 3];
 
-      const px = Math.max(0, Math.min(origWidth - 1, Math.round((cx - bw / 2) * origWidth)));
-      const py = Math.max(0, Math.min(origHeight - 1, Math.round((cy - bh / 2) * origHeight)));
-      const pw = Math.max(1, Math.min(origWidth - px, Math.round(bw * origWidth)));
-      const ph = Math.max(1, Math.min(origHeight - py, Math.round(bh * origHeight)));
+        const px = Math.max(0, Math.min(origWidth - 1, Math.round((cx - bw / 2) * origWidth)));
+        const py = Math.max(0, Math.min(origHeight - 1, Math.round((cy - bh / 2) * origHeight)));
+        const pw = Math.max(1, Math.min(origWidth - px, Math.round(bw * origWidth)));
+        const ph = Math.max(1, Math.min(origHeight - py, Math.round(bh * origHeight)));
 
-      let bestClassIdx = 0;
-      let maxScore = scoresData[sOffset];
-      for (let c = 1; c < 4; c++) {
-        if (scoresData[sOffset + c] > maxScore) {
-          maxScore = scoresData[sOffset + c];
-          bestClassIdx = c;
-        }
-      }
-
-      const conf = Math.max(0.0, Math.min(1.0, maxScore));
-      if (conf >= minConfidence) {
         candidates.push({
           bbox: [px, py, pw, ph],
-          label: CLASS_LABELS[bestClassIdx],
-          confidence: Number(conf.toFixed(4))
-        });
-      }
-    }
-  } else if (outputs.output0) {
-    const outData = outputs.output0.data;
-    const dims = outputs.output0.dims;
-    const numBoxes = dims[1];
-    const numAttrs = dims[2];
-
-    for (let i = 0; i < numBoxes; i++) {
-      const offset = i * numAttrs;
-      const cx = outData[offset];
-      const cy = outData[offset + 1];
-      const bw = outData[offset + 2];
-      const bh = outData[offset + 3];
-
-      const px = Math.max(0, Math.min(origWidth - 1, Math.round((cx - bw / 2) * origWidth)));
-      const py = Math.max(0, Math.min(origHeight - 1, Math.round((cy - bh / 2) * origHeight)));
-      const pw = Math.max(1, Math.min(origWidth - px, Math.round(bw * origWidth)));
-      const ph = Math.max(1, Math.min(origHeight - py, Math.round(bh * origHeight)));
-
-      let bestClassIdx = 0;
-      let maxScore = outData[offset + 4];
-      for (let c = 1; c < 4; c++) {
-        if (outData[offset + 4 + c] > maxScore) {
-          maxScore = outData[offset + 4 + c];
-          bestClassIdx = c;
-        }
-      }
-
-      if (maxScore >= minConfidence) {
-        candidates.push({
-          bbox: [px, py, pw, ph],
-          label: CLASS_LABELS[bestClassIdx],
-          confidence: Number(maxScore.toFixed(4))
+          category: 'face',
+          source: 'cv',
+          confidence: Number(score.toFixed(4))
         });
       }
     }
   }
 
-  // Augment with visual region proposals for crisp element boundaries
+  // Augment with facial proposals
   if (rawImageData) {
-    const visualDetections = extractVisualProposals(rawImageData);
-    for (let v = 0; v < visualDetections.length; v++) {
-      if (visualDetections[v].confidence >= minConfidence) {
-        candidates.push(visualDetections[v]);
+    const facialProposals = extractFacialProposals(rawImageData);
+    for (let v = 0; v < facialProposals.length; v++) {
+      if (facialProposals[v].confidence >= minConfidence) {
+        candidates.push(facialProposals[v]);
       }
     }
   }
 
-  // Non-Maximum Suppression to deduplicate overlapping bounding boxes
+  // Apply Non-Maximum Suppression to deduplicate overlapping face boxes
   const finalDetections = nonMaxSuppression(candidates, iouThreshold);
 
   return finalDetections;

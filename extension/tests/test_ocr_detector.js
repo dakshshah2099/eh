@@ -9,7 +9,7 @@ import {
   extractSensitiveRegionsFromOCR,
   detectCanvasTextRegions,
   detectSensitiveOCRRegions
-} from './ocr_detector.js';
+} from '../src/ocr_detector.js';
 
 // Test 1: Regex pattern extraction for each category
 {

@@ -19,7 +19,7 @@ import {
   shouldMerge,
   DEFAULT_CATEGORY_PRIORITY,
   DEFAULT_SOURCE_ORDER
-} from './region_merger.js';
+} from '../src/region_merger.js';
 
 test('Region Merger: Helper normalizeBBox handles all supported formats', () => {
   assert.deepEqual(normalizeBBox([10, 20, 100, 50]), [10, 20, 100, 50]);

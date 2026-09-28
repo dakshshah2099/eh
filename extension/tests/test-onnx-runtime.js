@@ -13,7 +13,7 @@ async function runTests() {
 
   // Test 1: manifest.json validation
   console.log('Test 1: Validating manifest.json...');
-  const manifestPath = path.join(__dirname, 'manifest.json');
+  const manifestPath = path.join(__dirname, '../manifest.json');
   assert(fs.existsSync(manifestPath), 'manifest.json must exist');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   
@@ -42,7 +42,7 @@ async function runTests() {
   ];
 
   for (const { file, minSize } of requiredFiles) {
-    const fullPath = path.join(__dirname, file);
+    const fullPath = path.join(__dirname, '..', file);
     assert(fs.existsSync(fullPath), `Asset file must exist: ${file}`);
     const stats = fs.statSync(fullPath);
     assert(stats.size >= minSize, `Asset ${file} size ${stats.size} must be >= ${minSize}`);
@@ -52,8 +52,8 @@ async function runTests() {
 
   // Test 3: Offscreen document HTML and structure
   console.log('Test 3: Verifying offscreen.html and offscreen.js...');
-  const htmlPath = path.join(__dirname, 'offscreen.html');
-  const jsPath = path.join(__dirname, 'offscreen.js');
+  const htmlPath = path.join(__dirname, '../offscreen/offscreen.html');
+  const jsPath = path.join(__dirname, '../offscreen/offscreen.js');
   assert(fs.existsSync(htmlPath), 'offscreen.html must exist');
   assert(fs.existsSync(jsPath), 'offscreen.js must exist');
 
@@ -64,7 +64,7 @@ async function runTests() {
   // Test 4: ORT Web and Transformers.js import and execution
   console.log('Test 4: Testing ONNX Runtime Web and Transformers.js imports...');
   globalThis.self = globalThis;
-  const ort = await import('./vendor/ort/ort.all.min.mjs');
+  const ort = await import('../vendor/ort/ort.all.min.mjs');
   assert(ort.Tensor, 'ort.Tensor must be exported');
   assert(ort.InferenceSession, 'ort.InferenceSession must be exported');
 
@@ -74,14 +74,14 @@ async function runTests() {
   assert.strictEqual(tensor.type, 'float32', 'Tensor type must be float32');
   console.log('  ✓ ort.Tensor successfully created:', tensor.dims, tensor.type);
 
-  const transformers = await import('./vendor/transformers/transformers.min.js');
+  const transformers = await import('../vendor/transformers/transformers.min.js');
   assert(transformers.pipeline || transformers.AutoModel, 'Transformers.js exports must be present');
   console.log('  ✓ Transformers.js loaded successfully');
   console.log('✓ ONNX Runtime Web and Transformers.js modules operate cleanly.\n');
 
   // Test 5: WebGPU detection and WASM fallback logic
   console.log('Test 5: Testing WebGPU detection & WASM fallback logic...');
-  const offscreen = await import('./offscreen.js');
+  const offscreen = await import('../offscreen/offscreen.js');
 
   // Case 5a: No navigator.gpu -> falls back to wasm
   const fallbackResult = await offscreen.detectBackend();
