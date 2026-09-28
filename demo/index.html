@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>On-Device Visual Perception - Demo & Test Harness</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header class="banner">
+      <div class="banner-header">
+        <div>
+          <h1>Sensitive PII Test Harness & Demo Environment</h1>
+          <p>Seed environment for on-device DOM & Vision redaction pipeline testing</p>
+        </div>
+        <div class="badge-counter" id="piiCounter">
+          <span style="font-size: 1.1rem;">🛡️</span>
+          <span>Seeded PII Elements: <strong id="piiCount">12</strong></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Interactive Test Control Toolbar -->
+    <div class="toolbar">
+      <button class="btn btn-primary" id="btnSubmitForm">
+        <span>🚀</span> Submit Form (Trigger Telemetry Request)
+      </button>
+      <button class="btn btn-secondary" id="btnToggleHighlight">
+        <span>👁️</span> Toggle PII Debug Highlighting
+      </button>
+      <button class="btn btn-secondary" id="btnToggleFaceSource">
+        <span>🔄</span> Toggle Avatar (Canvas / SVG)
+      </button>
+      <button class="btn btn-secondary" id="btnResetData">
+        <span>↺</span> Reset Seed Data
+      </button>
+      <button class="btn btn-outline-danger" id="btnClearForm">
+        <span>🗑️</span> Clear All Inputs
+      </button>
+    </div>
+
+    <form id="piiTestForm" onsubmit="return false;">
+      <div class="grid">
+        <!-- LEFT COLUMN: AUTH & PROFILE -->
+        <div class="col">
+          <!-- 1. Authentication Card -->
+          <div class="card" style="margin-bottom: 24px;">
+            <div class="card-title">
+              <span>Account Credentials</span>
+              <span class="pii-indicator">Auth PII</span>
+            </div>
+
+            <div class="form-group">
+              <label for="userEmail">Email Address</label>
+              <input 
+                type="email" 
+                id="userEmail" 
+                name="email" 
+                value="jane.doe.personal@confidential-mail.org" 
+                autocomplete="email" 
+                data-pii-type="email"
+                required
+              >
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="userPassword">Primary Password</label>
+                <input 
+                  type="password" 
+                  id="userPassword" 
+                  name="password" 
+                  value="P@ssw0rd!#Secret99" 
+                  autocomplete="current-password" 
+                  data-pii-type="password"
+                  required
+                >
+              </div>
+              <div class="form-group">
+                <label for="backupPin">Backup Security PIN</label>
+                <input 
+                  type="password" 
+                  id="backupPin" 
+                  name="pin" 
+                  maxlength="6" 
+                  value="839201" 
+                  data-pii-type="password"
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Personal Profile Card (Face + Identity) -->
+          <div class="card">
+            <div class="card-title">
+              <span>User Identity & Profile</span>
+              <span class="pii-indicator">Biometric & Identity</span>
+            </div>
+
+            <div class="profile-avatar-container">
+              <div class="avatar-wrapper" id="avatarContainer" data-pii-type="face" title="Face for CV detection">
+                <!-- SVG Avatar displayed by default -->
+                <img id="faceImg" src="assets/face.svg" alt="Human Profile Face for CV Face Detection" width="130" height="130">
+                <!-- Canvas Avatar option for canvas-based redaction tests -->
+                <canvas id="faceCanvas" width="130" height="130" style="display: none;"></canvas>
+              </div>
+              <div class="profile-info">
+                <div class="form-group" style="margin-bottom: 8px;">
+                  <label for="fullName">Full Name</label>
+                  <input 
+                    type="text" 
+                    id="fullName" 
+                    name="fullName" 
+                    value="Jane Alice Doe" 
+                    data-pii-type="name"
+                  >
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="phoneNumber">Primary Phone Number</label>
+                  <input 
+                    type="tel" 
+                    id="phoneNumber" 
+                    name="phone" 
+                    value="+1 (555) 234-5678" 
+                    data-pii-type="phone"
+                  >
+                </div>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="ssnInput">Social Security Number (SSN)</label>
+                <input 
+                  type="text" 
+                  id="ssnInput" 
+                  name="ssn" 
+                  value="987-65-4321" 
+                  placeholder="XXX-XX-XXXX" 
+                  data-pii-type="ssn"
+                >
+              </div>
+              <div class="form-group">
+                <label for="dateOfBirth">Date of Birth</label>
+                <input 
+                  type="date" 
+                  id="dateOfBirth" 
+                  name="dob" 
+                  value="1988-11-23" 
+                  data-pii-type="dob"
+                >
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="streetAddress">Street Address</label>
+              <input 
+                type="text" 
+                id="streetAddress" 
+                name="address" 
+                value="742 Evergreen Terrace" 
+                data-pii-type="address"
+              >
+            </div>
+
+            <div class="form-row">
+              <div class="form-group" style="flex: 2;">
+                <label for="cityInput">City</label>
+                <input 
+                  type="text" 
+                  id="cityInput" 
+                  name="city" 
+                  value="Springfield" 
+                  data-pii-type="address"
+                >
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label for="stateInput">State</label>
+                <input 
+                  type="text" 
+                  id="stateInput" 
+                  name="state" 
+                  value="OR" 
+                  data-pii-type="address"
+                >
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label for="zipInput">Zip Code</label>
+                <input 
+                  type="text" 
+                  id="zipInput" 
+                  name="zip" 
+                  value="97477" 
+                  data-pii-type="address"
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN: FINANCIAL & FREE-TEXT NOTES -->
+        <div class="col">
+          <!-- 3. Financial & Payment Card -->
+          <div class="card" style="margin-bottom: 24px;">
+            <div class="card-title">
+              <span>Financial & Billing Instruments</span>
+              <span class="pii-indicator">Payment PII</span>
+            </div>
+
+            <!-- Visual Credit Card Representation -->
+            <div class="credit-card-preview" id="cardPreview" data-pii-type="credit-card">
+              <div class="cc-chip"></div>
+              <div class="cc-number" id="ccDisplay" data-pii-type="credit-card">4532 0150 9823 8812</div>
+              <div class="cc-details">
+                <div>
+                  <div style="font-size: 0.65rem; opacity: 0.8;">Card Holder</div>
+                  <div class="cc-holder" id="ccHolderDisplay" data-pii-type="name">JANE ALICE DOE</div>
+                </div>
+                <div>
+                  <div style="font-size: 0.65rem; opacity: 0.8;">Expires</div>
+                  <div id="ccExpDisplay">11/28</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="creditCardNumber">Credit Card Number</label>
+              <input 
+                type="text" 
+                id="creditCardNumber" 
+                name="credit-card" 
+                value="4532 0150 9823 8812" 
+                data-pii-type="credit-card"
+              >
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cardExp">Expiration Date</label>
+                <input 
+                  type="text" 
+                  id="cardExp" 
+                  name="card-exp" 
+                  value="11/28" 
+                  placeholder="MM/YY"
+                >
+              </div>
+              <div class="form-group">
+                <label for="cardCvv">CVV / CVC</label>
+                <input 
+                  type="password" 
+                  id="cardCvv" 
+                  name="cc-cvv" 
+                  maxlength="4" 
+                  value="842" 
+                  data-pii-type="credit-card"
+                >
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="bankAccount">Bank Account Number</label>
+                <input 
+                  type="text" 
+                  id="bankAccount" 
+                  name="bank-account" 
+                  value="00987123456" 
+                  data-pii-type="financial"
+                >
+              </div>
+              <div class="form-group">
+                <label for="routingNumber">Routing Number</label>
+                <input 
+                  type="text" 
+                  id="routingNumber" 
+                  name="routing-number" 
+                  value="121000358" 
+                  data-pii-type="financial"
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Free-Text & Mixed Content Notes -->
+          <div class="card">
+            <div class="card-title">
+              <span>Unstructured Medical & Intake Records</span>
+              <span class="pii-indicator">Free-Text PII</span>
+            </div>
+
+            <div class="form-group">
+              <label>Rendered Document (OCR / Visual Testing Target):</label>
+              <div class="free-text-box" id="unstructuredDocument">
+                <p>
+                  <strong>CONFIDENTIAL PATIENT ADMISSION NOTE:</strong><br>
+                  Patient <span class="doc-pii" data-pii-type="name">Jane Alice Doe</span> (DOB: <span class="doc-pii" data-pii-type="dob">11/23/1988</span>, SSN: <span class="doc-pii" data-pii-type="ssn">987-65-4321</span>) was admitted on 09/20/2026.
+                </p>
+                <p style="margin-top: 8px;">
+                  Direct emergency contact: <span class="doc-pii" data-pii-type="phone">+1 (555) 234-5678</span> or <span class="doc-pii" data-pii-type="email">jane.doe.personal@confidential-mail.org</span>.
+                </p>
+                <p style="margin-top: 8px;">
+                  Residential residence recorded at <span class="doc-pii" data-pii-type="address">742 Evergreen Terrace, Springfield, OR 97477</span>. Co-pay billing settled via Visa <span class="doc-pii" data-pii-type="credit-card">4532 0150 9823 8812</span>.
+                </p>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="physicianNotes">Doctor Intake Comments (Editable Text Area)</label>
+              <textarea 
+                id="physicianNotes" 
+                name="notes" 
+                rows="4" 
+                data-pii-type="free-text"
+              >Patient Jane Doe reported severe migraines. Verified SSN 987-65-4321 and contact email jane.doe.personal@confidential-mail.org.</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+
+    <!-- Network Request & Interception Simulator Log -->
+    <div class="card" style="margin-top: 24px;">
+      <div class="card-title">
+        <span>Outgoing Payload Intercept Simulator (Ticket 19 Redaction Eval Target)</span>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">Endpoint: /api/telemetry/submit</span>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">
+        When <code>Submit Form</code> is triggered, an asynchronous <code>fetch()</code> request is dispatched with the serialized DOM and field data. Redaction test runners (e.g. Playwright) intercept this request to verify 0 raw PII leakage.
+      </p>
+      <pre class="network-log-panel" id="networkLog">// Awaiting form submission...</pre>
+    </div>
+
+    <!-- PII Manifest Inspector (Collapsible) -->
+    <div class="manifest-drawer">
+      <details class="card">
+        <summary style="font-weight: 700; cursor: pointer; color: var(--primary);">
+          Show Seeded PII Manifest (Automated Test Reference)
+        </summary>
+        <div style="margin-top: 14px;">
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px;">
+            The list below contains the exact raw string tokens and selectors seeded in this document. Accessible programmatically via <code>window.__PII_MANIFEST__</code>.
+          </p>
+          <pre class="manifest-content" id="manifestView"></pre>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <div class="toast" id="toastMsg">Action executed</div>
+
+  <!-- Seeded PII Manifest JSON (Directly accessible by Playwright & Test Runners) -->
+  <script id="pii-manifest" type="application/json">
+  {
+    "version": "1.0.0",
+    "entities": [
+      { "category": "email", "value": "jane.doe.personal@confidential-mail.org", "selector": "#userEmail" },
+      { "category": "password", "value": "P@ssw0rd!#Secret99", "selector": "#userPassword" },
+      { "category": "password", "value": "839201", "selector": "#backupPin" },
+      { "category": "name", "value": "Jane Alice Doe", "selector": "#fullName" },
+      { "category": "phone", "value": "+1 (555) 234-5678", "selector": "#phoneNumber" },
+      { "category": "ssn", "value": "987-65-4321", "selector": "#ssnInput" },
+      { "category": "credit_card", "value": "4532 0150 9823 8812", "selector": "#creditCardNumber" },
+      { "category": "credit_card", "value": "842", "selector": "#cardCvv" },
+      { "category": "financial", "value": "00987123456", "selector": "#bankAccount" },
+      { "category": "financial", "value": "121000358", "selector": "#routingNumber" },
+      { "category": "address", "value": "742 Evergreen Terrace", "selector": "#streetAddress" },
+      { "category": "face", "type": "visual_biometric", "selector": "#avatarContainer" }
+    ],
+    "rawTokens": [
+      "jane.doe.personal@confidential-mail.org",
+      "P@ssw0rd!#Secret99",
+      "839201",
+      "Jane Alice Doe",
+      "+1 (555) 234-5678",
+      "987-65-4321",
+      "4532 0150 9823 8812",
+      "842",
+      "00987123456",
+      "121000358",
+      "742 Evergreen Terrace",
+      "Springfield",
+      "97477"
+    ]
+  }
+  </script>
+
+  <script>
+    // Initialize PII Manifest on window for Playwright / automated tests
+    const manifestEl = document.getElementById('pii-manifest');
+    window.__PII_MANIFEST__ = JSON.parse(manifestEl.textContent);
+    document.getElementById('manifestView').textContent = JSON.stringify(window.__PII_MANIFEST__, null, 2);
+    document.getElementById('piiCount').textContent = window.__PII_MANIFEST__.entities.length;
+
+    // Canvas face renderer for test runner canvas tests
+    function drawCanvasFace() {
+      const canvas = document.getElementById('faceCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // Background
+      ctx.fillStyle = '#e9ecef';
+      ctx.fillRect(0, 0, w, h);
+
+      // Shoulders
+      ctx.fillStyle = '#2b4c7e';
+      ctx.beginPath();
+      ctx.arc(w / 2, h + 30, 55, 0, Math.PI, true);
+      ctx.fill();
+
+      // Neck
+      ctx.fillStyle = '#f8bfa2';
+      ctx.fillRect(w / 2 - 15, h / 2 + 10, 30, 25);
+
+      // Head oval
+      ctx.fillStyle = '#fedac2';
+      ctx.beginPath();
+      ctx.ellipse(w / 2, h / 2 - 5, 32, 40, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Hair
+      ctx.fillStyle = '#362312';
+      ctx.beginPath();
+      ctx.arc(w / 2, h / 2 - 18, 33, Math.PI, 0);
+      ctx.fill();
+
+      // Eyes
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(w / 2 - 13, h / 2 - 8, 6, 4, 0, 0, Math.PI * 2);
+      ctx.ellipse(w / 2 + 13, h / 2 - 8, 6, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Irises
+      ctx.fillStyle = '#2a6f97';
+      ctx.beginPath();
+      ctx.arc(w / 2 - 13, h / 2 - 8, 3, 0, Math.PI * 2);
+      ctx.arc(w / 2 + 13, h / 2 - 8, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupils
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(w / 2 - 13, h / 2 - 8, 1.5, 0, Math.PI * 2);
+      ctx.arc(w / 2 + 13, h / 2 - 8, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Eyebrows
+      ctx.strokeStyle = '#2a1a0c';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(w / 2 - 20, h / 2 - 16);
+      ctx.lineTo(w / 2 - 7, h / 2 - 16);
+      ctx.moveTo(w / 2 + 7, h / 2 - 16);
+      ctx.lineTo(w / 2 + 20, h / 2 - 16);
+      ctx.stroke();
+
+      // Nose
+      ctx.strokeStyle = '#c97b56';
+      ctx.beginPath();
+      ctx.moveTo(w / 2, h / 2 - 6);
+      ctx.lineTo(w / 2 - 2, h / 2 + 6);
+      ctx.lineTo(w / 2 + 2, h / 2 + 6);
+      ctx.stroke();
+
+      // Lips
+      ctx.fillStyle = '#c25252';
+      ctx.beginPath();
+      ctx.arc(w / 2, h / 2 + 16, 7, 0, Math.PI);
+      ctx.fill();
+    }
+
+    drawCanvasFace();
+
+    // Toggle Face Avatar (Canvas vs SVG img)
+    const btnToggleFaceSource = document.getElementById('btnToggleFaceSource');
+    const faceImg = document.getElementById('faceImg');
+    const faceCanvas = document.getElementById('faceCanvas');
+    btnToggleFaceSource.addEventListener('click', () => {
+      if (faceImg.style.display !== 'none') {
+        faceImg.style.display = 'none';
+        faceCanvas.style.display = 'block';
+        showToast('Avatar switched to Canvas element');
+      } else {
+        faceImg.style.display = 'block';
+        faceCanvas.style.display = 'none';
+        showToast('Avatar switched to SVG image');
+      }
+    });
+
+    // Toggle PII Highlight Overlay
+    let highlightingActive = false;
+    const btnToggleHighlight = document.getElementById('btnToggleHighlight');
+    btnToggleHighlight.addEventListener('click', () => {
+      highlightingActive = !highlightingActive;
+      const elements = document.querySelectorAll('[data-pii-type]');
+      elements.forEach(el => {
+        if (highlightingActive) {
+          el.style.outline = '2px solid #ef4444';
+          el.style.backgroundColor = '#fff1f2';
+        } else {
+          el.style.outline = '';
+          el.style.backgroundColor = '';
+        }
+      });
+      showToast(highlightingActive ? 'PII elements highlighted' : 'Highlights removed');
+    });
+
+    // Reset Seed Data
+    document.getElementById('btnResetData').addEventListener('click', () => {
+      document.getElementById('userEmail').value = 'jane.doe.personal@confidential-mail.org';
+      document.getElementById('userPassword').value = 'P@ssw0rd!#Secret99';
+      document.getElementById('backupPin').value = '839201';
+      document.getElementById('fullName').value = 'Jane Alice Doe';
+      document.getElementById('phoneNumber').value = '+1 (555) 234-5678';
+      document.getElementById('ssnInput').value = '987-65-4321';
+      document.getElementById('dateOfBirth').value = '1988-11-23';
+      document.getElementById('streetAddress').value = '742 Evergreen Terrace';
+      document.getElementById('cityInput').value = 'Springfield';
+      document.getElementById('stateInput').value = 'OR';
+      document.getElementById('zipInput').value = '97477';
+      document.getElementById('creditCardNumber').value = '4532 0150 9823 8812';
+      document.getElementById('ccDisplay').textContent = '4532 0150 9823 8812';
+      document.getElementById('cardCvv').value = '842';
+      document.getElementById('bankAccount').value = '00987123456';
+      document.getElementById('routingNumber').value = '121000358';
+      document.getElementById('physicianNotes').value = 'Patient Jane Doe reported severe migraines. Verified SSN 987-65-4321 and contact email jane.doe.personal@confidential-mail.org.';
+      showToast('Seed PII reset to defaults');
+    });
+
+    // Clear Form
+    document.getElementById('btnClearForm').addEventListener('click', () => {
+      const inputs = document.querySelectorAll('#piiTestForm input, #piiTestForm textarea');
+      inputs.forEach(i => i.value = '');
+      document.getElementById('ccDisplay').textContent = '•••• •••• •••• ••••';
+      showToast('Form cleared');
+    });
+
+    // Sync Credit Card display
+    document.getElementById('creditCardNumber').addEventListener('input', (e) => {
+      document.getElementById('ccDisplay').textContent = e.target.value || '•••• •••• •••• ••••';
+    });
+
+    document.getElementById('fullName').addEventListener('input', (e) => {
+      document.getElementById('ccHolderDisplay').textContent = (e.target.value || 'CARD HOLDER').toUpperCase();
+    });
+
+    // Submit Form / Network Request Dispatcher (Intercept target for Ticket 19)
+    document.getElementById('btnSubmitForm').addEventListener('click', async () => {
+      const payload = {
+        timestamp: new Date().toISOString(),
+        auth: {
+          email: document.getElementById('userEmail').value,
+          password: document.getElementById('userPassword').value,
+          pin: document.getElementById('backupPin').value
+        },
+        profile: {
+          name: document.getElementById('fullName').value,
+          phone: document.getElementById('phoneNumber').value,
+          ssn: document.getElementById('ssnInput').value,
+          dob: document.getElementById('dateOfBirth').value,
+          address: {
+            street: document.getElementById('streetAddress').value,
+            city: document.getElementById('cityInput').value,
+            state: document.getElementById('stateInput').value,
+            zip: document.getElementById('zipInput').value
+          }
+        },
+        financial: {
+          cardNumber: document.getElementById('creditCardNumber').value,
+          cvv: document.getElementById('cardCvv').value,
+          bankAccount: document.getElementById('bankAccount').value,
+          routingNumber: document.getElementById('routingNumber').value
+        },
+        notes: document.getElementById('physicianNotes').value
+      };
+
+      const logPanel = document.getElementById('networkLog');
+      logPanel.textContent = `[${new Date().toLocaleTimeString()}] Dispatching POST /api/telemetry/submit ...\nPayload:\n` + JSON.stringify(payload, null, 2);
+
+      try {
+        const resp = await fetch('/api/telemetry/submit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        showToast('Request sent (Status: ' + resp.status + ')');
+      } catch (err) {
+        // In local static mode or when offline, fetch may fail if /api/telemetry isn't backed by an API server
+        // This is normal and Playwright intercepts the route before it leaves the browser!
+        logPanel.textContent += `\n\n[Network Dispatch Result]: Request dispatched (${err.message}). Expected behavior in static harness mode.`;
+        showToast('Request dispatched');
+      }
+    });
+
+    function showToast(msg) {
+      const toast = document.getElementById('toastMsg');
+      toast.textContent = msg;
+      toast.style.display = 'block';
+      setTimeout(() => {
+        toast.style.display = 'none';
+      }, 2400);
+    }
+  </script>
+</body>
+</html>
