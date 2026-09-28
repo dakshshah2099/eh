@@ -50,8 +50,8 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
       const activeTab = tabs && tabs[0];
       const tabId = activeTab ? activeTab.id : null;
-
-      chrome.runtime.sendMessage({ type: actionType, tabId, async: true }, (response) => {
+      const task = document.getElementById('taskInput')?.value?.trim() || 'Fill profile and submit form';
+      chrome.runtime.sendMessage({ type: actionType, tabId, task, async: true }, (response) => {
         toggleBtn.disabled = false;
         if (chrome.runtime.lastError) {
           console.error('[Popup] Error toggling agent:', chrome.runtime.lastError.message);

@@ -660,8 +660,46 @@ export async function detectFaces(imageCanvasOrBase64, options = {}) {
     : (typeof options.minConfidence === 'number' ? options.minConfidence : 0.5);
   const iouThreshold = typeof options.iouThreshold === 'number' ? options.iouThreshold : 0.35;
 
+  const isServiceWorker = typeof ServiceWorkerGlobalScope !== 'undefined' && self instanceof ServiceWorkerGlobalScope;
+  if (isServiceWorker && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+    try {
+      const imgSource = typeof imageCanvasOrBase64 === 'string'
+        ? imageCanvasOrBase64
+        : (typeof imageCanvasOrBase64?.toDataURL === 'function' ? imageCanvasOrBase64.toDataURL() : '');
+      if (imgSource) {
+        const offscreenResult = await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { target: 'offscreen', type: 'DETECT_FACES', imageSource: imgSource, options },
+            (response) => {
+              if (chrome.runtime.lastError || !response?.success) {
+                resolve(null);
+              } else {
+                resolve(response.detections || []);
+              }
+            }
+          );
+        });
+        if (Array.isArray(offscreenResult)) {
+          return offscreenResult;
+        }
+      }
+    } catch (_) {}
+  }
+
   if (!activeFaceSession) {
-    await loadFaceModel(options);
+    try {
+      await loadFaceModel(options);
+    } catch (err) {
+      console.warn('[FaceDetector] Could not load ONNX model in current context, using algorithmic facial proposal fallback:', err.message);
+      try {
+        const parsed = await parseImageInput(imageCanvasOrBase64);
+        if (parsed) {
+          const proposals = extractFacialProposals(parsed);
+          return nonMaxSuppression(proposals.filter(p => p.confidence >= minConfidence), iouThreshold);
+        }
+      } catch (_) {}
+      return [];
+    }
   }
 
   const { inputTensor, origWidth, origHeight, rawImageData } = await preprocessFaceImage(
