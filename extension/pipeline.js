@@ -110,8 +110,11 @@ export async function createCanvasFromSource(imageSource, width, height) {
   return null;
 }
 
+let lastPipelineCaptureTime = 0;
+const MIN_CAPTURE_GAP_MS = 650;
+
 /**
- * Captures the specified tab using Chrome Tabs API.
+ * Captures the specified tab using Chrome Tabs API with rate-limiting and backoff.
  * @param {number|null} tabId
  * @param {object} [options={}]
  * @returns {Promise<string>} Base64 Data URL
@@ -142,7 +145,25 @@ async function captureTabVisible(tabId = null, options = {}) {
       captureOptions.quality = typeof options.quality === 'number' ? options.quality : 85;
     }
 
-    return await chrome.tabs.captureVisibleTab(windowId, captureOptions);
+    // Rate-limiting throttle to avoid Chrome MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND quota
+    const elapsed = Date.now() - lastPipelineCaptureTime;
+    if (elapsed < MIN_CAPTURE_GAP_MS) {
+      await new Promise(resolve => setTimeout(resolve, MIN_CAPTURE_GAP_MS - elapsed));
+    }
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        lastPipelineCaptureTime = Date.now();
+        return await chrome.tabs.captureVisibleTab(windowId, captureOptions);
+      } catch (err) {
+        if (err.message?.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') && attempt < 3) {
+          console.warn(`[Pipeline] Capture rate limit hit, backing off ${attempt * 600}ms...`);
+          await new Promise(resolve => setTimeout(resolve, attempt * 600));
+          continue;
+        }
+        throw err;
+      }
+    }
   }
 
   throw new Error('Chrome tabs captureVisibleTab API is not available');

@@ -51,8 +51,11 @@ export async function ensureOffscreenDocument(path = 'offscreen.html') {
   }
 }
 
+let lastBgCaptureTime = 0;
+const MIN_BG_CAPTURE_GAP_MS = 650;
+
 /**
- * Captures the visible tab of the specified window or tab.
+ * Captures the visible tab of the specified window or tab with quota protection.
  * @param {number|null} [tabId=null] - Tab ID to capture. If provided, ensures tab is active in its window.
  * @param {object} [options={}] - Capture options (format: 'jpeg'|'png', quality: 0-100)
  * @returns {Promise<string>} Base64 Data URL of the raw screenshot
@@ -81,8 +84,26 @@ export async function captureTab(tabId = null, options = {}) {
     captureOptions.quality = typeof options?.quality === 'number' ? options.quality : 85;
   }
 
-  const dataUrl = await chrome.tabs.captureVisibleTab(windowId, captureOptions);
-  return dataUrl;
+  // Throttle to respect MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND
+  const elapsed = Date.now() - lastBgCaptureTime;
+  if (elapsed < MIN_BG_CAPTURE_GAP_MS) {
+    await new Promise(resolve => setTimeout(resolve, MIN_BG_CAPTURE_GAP_MS - elapsed));
+  }
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      lastBgCaptureTime = Date.now();
+      const dataUrl = await chrome.tabs.captureVisibleTab(windowId, captureOptions);
+      return dataUrl;
+    } catch (err) {
+      if (err.message?.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') && attempt < 3) {
+        console.warn(`[Background] Capture rate limit hit, retrying after ${attempt * 600}ms...`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 600));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 /**
@@ -289,7 +310,7 @@ export async function startLoop(tabId = null, task = '', options = {}) {
   }
 
   const maxSteps = opts.maxSteps ?? opts.max_steps ?? 10;
-  const domSettleDelay = opts.domSettleDelay ?? opts.dom_settle_delay ?? 300;
+  const domSettleDelay = opts.domSettleDelay ?? opts.dom_settle_delay ?? 600;
   const serverUrl = opts.serverUrl || DEFAULT_SERVER_URL;
   const redactionMap = opts.redactionMap || [];
   const onStep = opts.onStep;

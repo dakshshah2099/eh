@@ -47,17 +47,32 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+_step_history: dict[str, int] = {}
+
+
 @app.post("/api/plan")
 def plan(payload: PlanRequest) -> PlanResponse:
+    task_key = payload.task or "default"
+    current_step = _step_history.get(task_key, 0) + 1
+    _step_history[task_key] = current_step
+
+    if current_step == 1:
+        return PlanResponse(
+            actions=[
+                ActionItem(
+                    type="click",
+                    target_bbox=[10.0, 10.0, 50.0, 20.0],
+                    target_selector="button#submit",
+                    reason="test",
+                )
+            ],
+            task_complete=False,
+            confidence=0.95,
+        )
+
+    _step_history[task_key] = 0
     return PlanResponse(
-        actions=[
-            ActionItem(
-                type="click",
-                target_bbox=[10.0, 10.0, 50.0, 20.0],
-                target_selector="button#submit",
-                reason="test",
-            )
-        ],
-        task_complete=False,
-        confidence=0.95,
+        actions=[],
+        task_complete=True,
+        confidence=0.99,
     )
