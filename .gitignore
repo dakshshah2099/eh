@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 .pytest_cache/
 *.log
+debug_redacted_images/
