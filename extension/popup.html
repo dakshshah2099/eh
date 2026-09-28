@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Lens Agent</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="title-group">
+        <h1 class="title">Privacy Lens</h1>
+        <span class="version">v0.1.0</span>
+      </div>
+      <p class="subtitle">On-Device Visual Perception</p>
+    </header>
+
+    <div class="card status-card">
+      <div class="status-row">
+        <span class="label">Status:</span>
+        <span id="statusBadge" class="badge badge-stopped">STOPPED</span>
+      </div>
+      <div class="info-row">
+        <span id="statusInfo" class="info-text">Agent is idle</span>
+      </div>
+      <div class="info-row">
+        <span id="runtimeInfo" class="info-text">Backend: Checking...</span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="toggleBtn" class="btn btn-primary">Start Agent</button>
+    </div>
+
+    <footer class="footer">
+      <span>Manifest V3 Lens</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
