@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+
+    <!-- Outer Rim Gradient -->
+    <linearGradient id="rimGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#6366f1" />
+    </linearGradient>
+
+    <!-- Shield Gradient -->
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0ea5e9" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+
+    <!-- Lens Iris Gradient -->
+    <radialGradient id="irisGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="40%" stop-color="#38bdf8" />
+      <stop offset="80%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0369a1" />
+    </radialGradient>
+
+    <!-- Glass Glare Gradient -->
+    <linearGradient id="glareGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.0" />
+    </linearGradient>
+  </defs>
+
+  <!-- Base Rounded Squircle -->
+  <rect x="4" y="4" width="120" height="120" rx="28" ry="28" fill="url(#bgGrad)" />
+  <rect x="4" y="4" width="120" height="120" rx="28" ry="28" fill="none" stroke="url(#rimGrad)" stroke-width="3" />
+
+  <!-- Outer Lens Ring -->
+  <circle cx="64" cy="64" r="48" fill="none" stroke="#334155" stroke-width="3" stroke-dasharray="8 4" opacity="0.6" />
+  <circle cx="64" cy="64" r="42" fill="#090d16" stroke="url(#rimGrad)" stroke-width="2.5" />
+
+  <!-- Privacy Shield Shape -->
+  <path d="M 64 28
+           C 78 36, 88 38, 92 41
+           C 92 68, 80 85, 64 99
+           C 48 85, 36 68, 36 41
+           C 40 38, 50 36, 64 28 Z"
+        fill="url(#shieldGrad)"
+        stroke="#7dd3fc"
+        stroke-width="2" />
+
+  <!-- Central Camera Lens / Privacy Iris -->
+  <circle cx="64" cy="60" r="19" fill="#0f172a" stroke="#bae6fd" stroke-width="2.5" />
+  <circle cx="64" cy="60" r="14" fill="url(#irisGrad)" />
+  <circle cx="64" cy="60" r="7" fill="#0f172a" />
+  <circle cx="64" cy="60" r="3.5" fill="#38bdf8" />
+
+  <!-- Lens Specular Glint Highlight -->
+  <circle cx="60.5" cy="56.5" r="3" fill="#ffffff" opacity="0.9" />
+  <circle cx="66.5" cy="63.5" r="1.5" fill="#ffffff" opacity="0.7" />
+
+  <!-- Lock Shackle Accent at bottom of shield -->
+  <path d="M 59 78 L 69 78 C 70 78, 71 79, 71 80 L 71 85 C 71 86, 70 87, 69 87 L 59 87 C 58 87, 57 86, 57 85 L 57 80 C 57 79, 58 78, 59 78 Z"
+        fill="#ffffff" opacity="0.95" />
+  <path d="M 61 78 L 61 75 C 61 72.8, 62.8 71, 65 71 C 67.2 71, 69 72.8, 69 75 L 69 78"
+        fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.95" />
+
+  <!-- Glass Lens Reflection Arc -->
+  <path d="M 28 42
+           A 42 42 0 0 1 100 42
+           C 85 58, 43 58, 28 42 Z"
+        fill="url(#glareGrad)" />
+</svg>
