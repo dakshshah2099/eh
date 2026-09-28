@@ -2,9 +2,14 @@ import base64
 import os
 from pathlib import Path
 from typing import Any
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+# Load environment variables from .env file (if present)
+load_dotenv(Path(__file__).parent / ".env")
+load_dotenv()
 
 DEBUG_SAVE_REDACTED = os.getenv("DEBUG_SAVE_REDACTED", "0").lower() in ("1", "true", "yes")
 REDACTED_IMAGES_DIR = Path(os.getenv("REDACTED_IMAGES_DIR", "debug_redacted_images"))
