@@ -315,6 +315,7 @@ export async function startLoop(tabId = null, task = '', options = {}) {
   const redactionMap = opts.redactionMap || [];
   const onStep = opts.onStep;
 
+  await ensureOffscreenDocument();
   await ensureState();
   agentState.isRunning = true;
   agentState.currentTabId = targetTabId;

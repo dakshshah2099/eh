@@ -687,6 +687,18 @@ export async function detectFaces(imageCanvasOrBase64, options = {}) {
   }
 
   if (!activeFaceSession) {
+    if (isServiceWorker) {
+      // In ServiceWorkerGlobalScope, dynamic import is prohibited by browser specs. Use algorithmic detection.
+      try {
+        const parsed = await parseImageInput(imageCanvasOrBase64);
+        if (parsed) {
+          const proposals = extractFacialProposals(parsed);
+          return nonMaxSuppression(proposals.filter(p => p.confidence >= minConfidence), iouThreshold);
+        }
+      } catch (_) {}
+      return [];
+    }
+
     try {
       await loadFaceModel(options);
     } catch (err) {
