@@ -1132,6 +1132,193 @@ async function executeActions(actions) {
   return results.length === 1 ? results[0] : { success: true, results };
 }
 
+// PII Highlight state management
+let piiHighlightState = {
+  active: false,
+  count: 0,
+  cleanupFn: null
+};
+
+/**
+ * Returns current PII highlight status.
+ */
+function getPiiHighlightStatus() {
+  return {
+    success: true,
+    active: piiHighlightState.active,
+    count: piiHighlightState.count
+  };
+}
+
+/**
+ * Clears all active PII highlights from the DOM.
+ */
+function clearPiiHighlights() {
+  if (typeof document === 'undefined') {
+    return { success: true, active: false, count: 0 };
+  }
+
+  if (typeof piiHighlightState.cleanupFn === 'function') {
+    piiHighlightState.cleanupFn();
+    piiHighlightState.cleanupFn = null;
+  }
+
+  const container = document.getElementById('privacy-lens-pii-container');
+  if (container) {
+    container.remove();
+  }
+
+  const highlightedElements = document.querySelectorAll('[data-privacy-lens-highlight]');
+  for (const el of highlightedElements) {
+    if (el.dataset.privacyLensPrevOutline !== undefined) {
+      el.style.outline = el.dataset.privacyLensPrevOutline;
+      delete el.dataset.privacyLensPrevOutline;
+    } else {
+      el.style.outline = '';
+    }
+    if (el.dataset.privacyLensPrevOffset !== undefined) {
+      el.style.outlineOffset = el.dataset.privacyLensPrevOffset;
+      delete el.dataset.privacyLensPrevOffset;
+    } else {
+      el.style.outlineOffset = '';
+    }
+    if (el.dataset.privacyLensPrevShadow !== undefined) {
+      el.style.boxShadow = el.dataset.privacyLensPrevShadow;
+      delete el.dataset.privacyLensPrevShadow;
+    } else {
+      el.style.boxShadow = '';
+    }
+    el.removeAttribute('data-privacy-lens-highlight');
+  }
+
+  piiHighlightState.active = false;
+  piiHighlightState.count = 0;
+  return { success: true, active: false, count: 0 };
+}
+
+/**
+ * Applies visual highlight borders and floating badges to recognized PII fields.
+ * @param {Array<{ selector?: string, bbox?: number[], category?: string }>} regions
+ */
+function applyPiiHighlights(regions = []) {
+  if (typeof document === 'undefined') {
+    return { success: false, active: false, count: 0 };
+  }
+
+  clearPiiHighlights();
+
+  const CATEGORY_CONFIG = {
+    password: { border: '#ef4444', label: 'PASSWORD' },
+    card: { border: '#f97316', label: 'CREDIT CARD' },
+    ssn: { border: '#8b5cf6', label: 'SSN / TAX' },
+    pin: { border: '#ec4899', label: 'PIN / OTP' },
+    otp: { border: '#ec4899', label: 'OTP' },
+    tax: { border: '#8b5cf6', label: 'TAX ID' },
+    email: { border: '#3b82f6', label: 'EMAIL' },
+    phone: { border: '#06b6d4', label: 'PHONE' },
+    default: { border: '#e11d48', label: 'SENSITIVE PII' }
+  };
+
+  const container = document.createElement('div');
+  container.id = 'privacy-lens-pii-container';
+  container.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 0; pointer-events: none; z-index: 2147483647;';
+  if (document.body) {
+    document.body.appendChild(container);
+  }
+
+  const matchedEntries = [];
+
+  for (const region of regions) {
+    let el = null;
+    if (region.selector) {
+      try {
+        el = document.querySelector(region.selector);
+      } catch (e) {
+        el = null;
+      }
+    }
+    if (!el && Array.isArray(region.bbox) && region.bbox.length === 4) {
+      const [x, y, w, h] = region.bbox;
+      el = document.elementFromPoint(x + w / 2, y + h / 2);
+    }
+    if (!el) continue;
+
+    const catKey = (region.category || 'default').toLowerCase();
+    const config = CATEGORY_CONFIG[catKey] || CATEGORY_CONFIG.default;
+
+    if (!el.hasAttribute('data-privacy-lens-highlight')) {
+      el.dataset.privacyLensPrevOutline = el.style.outline || '';
+      el.dataset.privacyLensPrevOffset = el.style.outlineOffset || '';
+      el.dataset.privacyLensPrevShadow = el.style.boxShadow || '';
+      el.setAttribute('data-privacy-lens-highlight', catKey);
+
+      el.style.setProperty('outline', `2px solid ${config.border}`, 'important');
+      el.style.setProperty('outline-offset', '2px', 'important');
+      el.style.setProperty('box-shadow', `0 0 10px ${config.border}88`, 'important');
+    }
+
+    const badge = document.createElement('div');
+    badge.className = 'privacy-lens-pii-badge';
+    badge.textContent = `🔒 ${config.label}`;
+    badge.style.cssText = `
+      position: absolute;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 6px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.2;
+      color: #ffffff;
+      background-color: ${config.border};
+      border-radius: 4px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 2147483647;
+    `;
+    container.appendChild(badge);
+    matchedEntries.push({ el, badge });
+  }
+
+  function updateBadgePositions() {
+    for (const { el, badge } of matchedEntries) {
+      const rect = el.getBoundingClientRect();
+      const top = rect.top + (window.scrollY || 0) - 18;
+      const left = rect.left + (window.scrollX || 0);
+      badge.style.top = `${Math.max(0, top)}px`;
+      badge.style.left = `${Math.max(0, left)}px`;
+    }
+  }
+
+  updateBadgePositions();
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('scroll', updateBadgePositions, { passive: true });
+    window.addEventListener('resize', updateBadgePositions, { passive: true });
+
+    piiHighlightState.cleanupFn = () => {
+      window.removeEventListener('scroll', updateBadgePositions);
+      window.removeEventListener('resize', updateBadgePositions);
+    };
+  }
+
+  piiHighlightState.active = true;
+  piiHighlightState.count = matchedEntries.length;
+
+  return { success: true, active: true, count: matchedEntries.length };
+}
+
+/**
+ * Toggles PII highlights on/off.
+ */
+function togglePiiHighlights(regions = []) {
+  if (piiHighlightState.active) {
+    return clearPiiHighlights();
+  }
+  return applyPiiHighlights(regions);
+}
+
 // Register message listener for requests from background or popup scripts
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1209,6 +1396,30 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       })();
       return true;
     }
+
+    if (message && message.type === 'APPLY_PII_HIGHLIGHT') {
+      const res = applyPiiHighlights(message.regions || []);
+      sendResponse(res);
+      return true;
+    }
+
+    if (message && message.type === 'CLEAR_PII_HIGHLIGHT') {
+      const res = clearPiiHighlights();
+      sendResponse(res);
+      return true;
+    }
+
+    if (message && message.type === 'GET_PII_HIGHLIGHT_STATUS') {
+      const res = getPiiHighlightStatus();
+      sendResponse(res);
+      return true;
+    }
+
+    if (message && message.type === 'TOGGLE_PII_HIGHLIGHT') {
+      const res = togglePiiHighlights(message.regions || []);
+      sendResponse(res);
+      return true;
+    }
   });
 }
 
@@ -1225,6 +1436,10 @@ if (typeof window !== 'undefined') {
   window.executeType = executeType;
   window.executeAction = executeAction;
   window.executeActions = executeActions;
+  window.applyPiiHighlights = applyPiiHighlights;
+  window.clearPiiHighlights = clearPiiHighlights;
+  window.getPiiHighlightStatus = getPiiHighlightStatus;
+  window.togglePiiHighlights = togglePiiHighlights;
 }
 
 // Module export for Node.js / unit tests
@@ -1247,6 +1462,10 @@ if (typeof module !== 'undefined' && module.exports) {
     executeScroll,
     executeType,
     executeAction,
-    executeActions
+    executeActions,
+    applyPiiHighlights,
+    clearPiiHighlights,
+    getPiiHighlightStatus,
+    togglePiiHighlights
   };
 }

@@ -83,7 +83,64 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Highlight PII Button logic
+  const highlightBtn = document.getElementById('highlightBtn');
+  let currentHighlightActive = false;
+
+  function updateHighlightUI(isActive, count = 0) {
+    currentHighlightActive = Boolean(isActive);
+    if (!highlightBtn) return;
+    if (currentHighlightActive) {
+      highlightBtn.textContent = `✨ Clear Highlights${count > 0 ? ` (${count})` : ''}`;
+      highlightBtn.className = 'btn btn-warning';
+    } else {
+      highlightBtn.textContent = '🔍 Highlight PII Fields';
+      highlightBtn.className = 'btn btn-secondary';
+    }
+  }
+
+  function fetchHighlightStatus() {
+    if (!chrome.tabs?.query) return;
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const activeTab = tabs && tabs[0];
+      if (!activeTab || !activeTab.id) return;
+      chrome.runtime.sendMessage({ type: 'GET_PII_HIGHLIGHT_STATUS', tabId: activeTab.id }, (response) => {
+        if (!chrome.runtime.lastError && response && response.success) {
+          updateHighlightUI(response.active, response.count);
+        }
+      });
+    });
+  }
+
+  if (highlightBtn) {
+    highlightBtn.addEventListener('click', () => {
+      highlightBtn.disabled = true;
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTab = tabs && tabs[0];
+        const tabId = activeTab ? activeTab.id : null;
+        chrome.runtime.sendMessage({ type: 'TOGGLE_PII_HIGHLIGHT', tabId }, (response) => {
+          highlightBtn.disabled = false;
+          if (chrome.runtime.lastError) {
+            console.error('[Popup] Error toggling PII highlights:', chrome.runtime.lastError.message);
+            statusInfo.textContent = `Highlight error: ${chrome.runtime.lastError.message}`;
+            return;
+          }
+          if (response && response.success) {
+            updateHighlightUI(response.active, response.count);
+            statusInfo.textContent = response.active
+              ? `Highlighted ${response.count} PII field(s)`
+              : 'Cleared PII highlights';
+          } else {
+            const err = response?.error || 'Failed to highlight';
+            statusInfo.textContent = `Highlight error: ${err}`;
+          }
+        });
+      });
+    });
+  }
+
   // Initial fetch
   fetchStatus();
   fetchRuntimeStatus();
+  fetchHighlightStatus();
 });

@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-09-28T14:45:31.439Z",
-  "durationMs": 2848,
+  "timestamp": "2026-09-28T14:50:09.313Z",
+  "durationMs": 2568,
   "testHarness": {
-    "demoUrl": "http://127.0.0.1:2706/index.html",
+    "demoUrl": "http://127.0.0.1:35679/index.html",
     "pageTitle": "On-Device Visual Perception - Demo & Test Harness",
     "viewport": {
       "width": 1280,
@@ -517,7 +517,7 @@
   },
   "pipelineInterceptedPayload": {
     "task": "Securely audit profile and submit sanitized transaction",
-    "serverUrl": "http://127.0.0.1:2707/api/plan",
+    "serverUrl": "http://127.0.0.1:35680/api/plan",
     "redactionMapCount": 5,
     "redactionMap": [
       {

@@ -151,6 +151,25 @@ body {
   background-color: var(--danger-hover);
 }
 
+.btn-secondary {
+  background-color: #334155;
+  color: #f8fafc;
+  border: 1px solid #475569;
+}
+
+.btn-secondary:hover {
+  background-color: #475569;
+}
+
+.btn-warning {
+  background-color: #d97706;
+  color: #ffffff;
+}
+
+.btn-warning:hover {
+  background-color: #b45309;
+}
+
 .footer {
   text-align: center;
   font-size: 10px;

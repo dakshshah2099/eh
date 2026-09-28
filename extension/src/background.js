@@ -3,6 +3,7 @@ import { downscaleImage, calculateTargetDimensions } from './downscale.js';
 import { sendPayloadToServer, buildPayload, DEFAULT_SERVER_URL } from './transport.js';
 import { executePipeline } from './pipeline.js';
 import { defaultProfiler, LatencyProfiler, LATENCY_BUDGET_MS } from './profiler.js';
+import { detectSensitiveDomElements } from './dom_detector.js';
 
 let agentState = {
   isRunning: false,
@@ -602,6 +603,52 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
             options: message.options
           });
           sendResponse(res);
+          break;
+        }
+        case 'TOGGLE_PII_HIGHLIGHT': {
+          let targetTabId = message.tabId;
+          if (targetTabId == null) {
+            const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            targetTabId = activeTab?.id;
+          }
+          if (targetTabId == null) {
+            sendResponse({ success: false, error: 'No active tab found' });
+            break;
+          }
+          await ensureContentScript(targetTabId);
+          const currentStatus = await chrome.tabs.sendMessage(targetTabId, { type: 'GET_PII_HIGHLIGHT_STATUS' }).catch(() => null);
+          if (currentStatus?.active) {
+            const clearRes = await chrome.tabs.sendMessage(targetTabId, { type: 'CLEAR_PII_HIGHLIGHT' }).catch(() => null);
+            sendResponse({ success: true, active: false, count: 0 });
+          } else {
+            const skeletonResp = await chrome.tabs.sendMessage(targetTabId, { type: 'EXTRACT_DOM_SKELETON' });
+            const sensitiveElements = detectSensitiveDomElements(skeletonResp.skeleton || skeletonResp.tree || skeletonResp);
+            const applyRes = await chrome.tabs.sendMessage(targetTabId, {
+              type: 'APPLY_PII_HIGHLIGHT',
+              regions: sensitiveElements
+            });
+            sendResponse({
+              success: true,
+              active: true,
+              count: sensitiveElements.length,
+              regions: sensitiveElements
+            });
+          }
+          break;
+        }
+        case 'GET_PII_HIGHLIGHT_STATUS': {
+          let targetTabId = message.tabId;
+          if (targetTabId == null) {
+            const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            targetTabId = activeTab?.id;
+          }
+          if (targetTabId == null) {
+            sendResponse({ success: false, active: false });
+            break;
+          }
+          await ensureContentScript(targetTabId);
+          const statusResp = await chrome.tabs.sendMessage(targetTabId, { type: 'GET_PII_HIGHLIGHT_STATUS' }).catch(() => null);
+          sendResponse({ success: true, active: Boolean(statusResp?.active), count: statusResp?.count || 0 });
           break;
         }
         case 'GET_RUNTIME_STATUS':
