@@ -1,21 +1,53 @@
 // Popup script for Privacy Lens Agent
 
+// LiteLLM provider → { hint, needsKey, needsBaseUrl }
+const PROVIDER_META = {
+  openai:           { hint: 'gpt-4o, gpt-4o-mini, o1-mini', needsKey: true,  needsBaseUrl: false },
+  anthropic:        { hint: 'claude-3-5-sonnet-20241022, claude-3-haiku-20240307', needsKey: true,  needsBaseUrl: false },
+  gemini:           { hint: 'gemini/gemini-2.0-flash, gemini/gemini-1.5-pro', needsKey: true,  needsBaseUrl: false },
+  vertex_ai:        { hint: 'vertex_ai/gemini-2.0-flash', needsKey: false, needsBaseUrl: false },
+  azure:            { hint: 'azure/<deployment-name>', needsKey: true,  needsBaseUrl: true  },
+  bedrock:          { hint: 'bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0', needsKey: false, needsBaseUrl: false },
+  groq:             { hint: 'groq/llama-3.3-70b-versatile, groq/gemma2-9b-it', needsKey: true,  needsBaseUrl: false },
+  cerebras:         { hint: 'cerebras/llama3.1-8b', needsKey: true,  needsBaseUrl: false },
+  fireworks_ai:     { hint: 'fireworks_ai/accounts/fireworks/models/llama-v3p1-8b-instruct', needsKey: true,  needsBaseUrl: false },
+  together_ai:      { hint: 'together_ai/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo', needsKey: true,  needsBaseUrl: false },
+  deepinfra:        { hint: 'deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo', needsKey: true,  needsBaseUrl: false },
+  sambanova:        { hint: 'sambanova/Meta-Llama-3.1-8B-Instruct', needsKey: true,  needsBaseUrl: false },
+  deepseek:         { hint: 'deepseek/deepseek-chat, deepseek/deepseek-reasoner', needsKey: true,  needsBaseUrl: false },
+  mistral:          { hint: 'mistral/mistral-large-latest, mistral/codestral-latest', needsKey: true,  needsBaseUrl: false },
+  cohere:           { hint: 'command-r-plus, command-r', needsKey: true,  needsBaseUrl: false },
+  xai:              { hint: 'xai/grok-2-latest, xai/grok-3-mini', needsKey: true,  needsBaseUrl: false },
+  perplexity:       { hint: 'perplexity/sonar-pro, perplexity/sonar', needsKey: true,  needsBaseUrl: false },
+  openrouter:       { hint: 'openrouter/meta-llama/llama-3.3-70b-instruct', needsKey: true,  needsBaseUrl: false },
+  ollama:           { hint: 'ollama/llama3.2, ollama/qwen2.5-coder', needsKey: false, needsBaseUrl: true  },
+  vllm:             { hint: 'hosted_vllm/meta-llama/Llama-3.1-8B-Instruct', needsKey: false, needsBaseUrl: true  },
+  lm_studio:        { hint: 'lm_studio/qwen2.5-14b-instruct', needsKey: false, needsBaseUrl: true  },
+  openai_compatible:{ hint: 'openai/<model-name>', needsKey: true,  needsBaseUrl: true  },
+};
+
+const DEFAULT_BASE_URLS = {
+  ollama:    'http://localhost:11434',
+  vllm:      'http://localhost:8000',
+  lm_studio: 'http://localhost:1234',
+  azure:     'https://<resource>.openai.azure.com',
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   const statusBadge = document.getElementById('statusBadge');
-  const statusInfo = document.getElementById('statusInfo');
-  const toggleBtn = document.getElementById('toggleBtn');
+  const statusInfo  = document.getElementById('statusInfo');
+  const toggleBtn   = document.getElementById('toggleBtn');
 
   let currentRunning = false;
 
+  // ── Agent status UI ──────────────────────────────────────────────────────
   function updateUI(isRunning, lastStartedAt, lastStoppedAt) {
     currentRunning = Boolean(isRunning);
-
     if (currentRunning) {
       statusBadge.textContent = 'RUNNING';
       statusBadge.className = 'badge badge-running';
       toggleBtn.textContent = 'Stop Agent';
       toggleBtn.className = 'btn btn-danger';
-
       const timeStr = lastStartedAt ? new Date(lastStartedAt).toLocaleTimeString() : 'now';
       statusInfo.textContent = `Loop active since ${timeStr}`;
     } else {
@@ -23,7 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
       statusBadge.className = 'badge badge-stopped';
       toggleBtn.textContent = 'Start Agent';
       toggleBtn.className = 'btn btn-primary';
-
       const timeStr = lastStoppedAt ? ` (stopped at ${new Date(lastStoppedAt).toLocaleTimeString()})` : '';
       statusInfo.textContent = `Agent is idle${timeStr}`;
     }
@@ -48,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const isStarting = !currentRunning;
     const actionType = isStarting ? 'START_AGENT' : 'STOP_AGENT';
 
-    // Optimistic UI — flip immediately so the user sees instant feedback
+    // Optimistic UI
     if (isStarting) {
       updateUI(true, Date.now(), null);
       statusInfo.textContent = 'Starting agent…';
@@ -66,21 +97,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chrome.runtime.lastError) {
           console.error('[Popup] Error toggling agent:', chrome.runtime.lastError.message);
           statusInfo.textContent = `Error: ${chrome.runtime.lastError.message}`;
-          fetchStatus(); // revert optimistic on error
+          fetchStatus();
           return;
         }
-
         if (response && response.success) {
-          fetchStatus(); // confirm real state
+          fetchStatus();
         } else {
           const err = (response && response.error) || 'Failed to toggle agent';
           statusInfo.textContent = `Error: ${err}`;
-          fetchStatus(); // revert optimistic on error
+          fetchStatus();
         }
       });
     });
   });
 
+  // ── Runtime backend info ─────────────────────────────────────────────────
   function fetchRuntimeStatus() {
     chrome.runtime.sendMessage({ type: 'GET_RUNTIME_STATUS' }, (response) => {
       const runtimeInfo = document.getElementById('runtimeInfo');
@@ -95,7 +126,91 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Highlight PII Button logic
+  // ── LLM Settings Panel ───────────────────────────────────────────────────
+  const cloudModeToggle  = document.getElementById('cloudModeToggle');
+  const cloudSettings    = document.getElementById('cloudSettings');
+  const providerSelect   = document.getElementById('providerSelect');
+  const modelInput       = document.getElementById('modelInput');
+  const apiKeyInput      = document.getElementById('apiKeyInput');
+  const apiKeyGroup      = document.getElementById('apiKeyGroup');
+  const baseUrlInput     = document.getElementById('baseUrlInput');
+  const baseUrlGroup     = document.getElementById('baseUrlGroup');
+  const modelHint        = document.getElementById('modelHint');
+  const toggleKeyBtn     = document.getElementById('toggleKeyVisibility');
+  const saveLlmBtn       = document.getElementById('saveLlmConfig');
+  const saveStatus       = document.getElementById('saveStatus');
+  const llmModeLabel     = document.getElementById('llmModeLabel');
+
+  function applyProviderMeta(provider) {
+    const meta = PROVIDER_META[provider] || { hint: '', needsKey: true, needsBaseUrl: false };
+    modelHint.textContent = meta.hint ? `e.g. ${meta.hint}` : '';
+    apiKeyGroup.style.display = meta.needsKey ? '' : 'none';
+    baseUrlGroup.style.display = meta.needsBaseUrl ? '' : 'none';
+    if (meta.needsBaseUrl && DEFAULT_BASE_URLS[provider] && !baseUrlInput.value) {
+      baseUrlInput.value = DEFAULT_BASE_URLS[provider];
+    }
+  }
+
+  providerSelect.addEventListener('change', () => applyProviderMeta(providerSelect.value));
+
+  cloudModeToggle.addEventListener('change', () => {
+    const isCloud = cloudModeToggle.checked;
+    cloudSettings.classList.toggle('hidden', !isCloud);
+    llmModeLabel.textContent = isCloud ? 'Local' : 'Local';
+    // Save mode preference
+    chrome.storage.local.set({ llmMode: isCloud ? 'cloud' : 'local' });
+    // Notify background
+    chrome.runtime.sendMessage({ type: 'SET_LLM_MODE', mode: isCloud ? 'cloud' : 'local' });
+  });
+
+  toggleKeyBtn.addEventListener('click', () => {
+    const isPassword = apiKeyInput.type === 'password';
+    apiKeyInput.type = isPassword ? 'text' : 'password';
+    toggleKeyBtn.textContent = isPassword ? '🙈' : '👁';
+  });
+
+  saveLlmBtn.addEventListener('click', () => {
+    const config = {
+      provider: providerSelect.value,
+      model:    modelInput.value.trim(),
+      apiKey:   apiKeyInput.value.trim(),
+      baseUrl:  baseUrlInput.value.trim(),
+    };
+
+    if (!config.model) {
+      saveStatus.style.color = '#f87171';
+      saveStatus.textContent = 'Model name is required';
+      setTimeout(() => { saveStatus.textContent = ''; }, 2500);
+      return;
+    }
+
+    chrome.storage.local.set({ llmConfig: config }, () => {
+      // Forward to background so it can use it immediately
+      chrome.runtime.sendMessage({ type: 'SET_LLM_CONFIG', config });
+      saveStatus.style.color = '#34d399';
+      saveStatus.textContent = '✓ Saved';
+      setTimeout(() => { saveStatus.textContent = ''; }, 2000);
+    });
+  });
+
+  // Load persisted LLM settings
+  chrome.storage.local.get(['llmConfig', 'llmMode'], (data) => {
+    const mode = data.llmMode || 'local';
+    const isCloud = mode === 'cloud';
+    cloudModeToggle.checked = isCloud;
+    cloudSettings.classList.toggle('hidden', !isCloud);
+
+    if (data.llmConfig) {
+      const c = data.llmConfig;
+      if (c.provider) providerSelect.value = c.provider;
+      if (c.model)    modelInput.value = c.model;
+      if (c.apiKey)   apiKeyInput.value = c.apiKey;
+      if (c.baseUrl)  baseUrlInput.value = c.baseUrl;
+    }
+    applyProviderMeta(providerSelect.value);
+  });
+
+  // ── Highlight PII Button ─────────────────────────────────────────────────
   const highlightBtn = document.getElementById('highlightBtn');
   let currentHighlightActive = false;
 
@@ -151,7 +266,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Initial fetch
+  // ── Initial loads ────────────────────────────────────────────────────────
   fetchStatus();
   fetchRuntimeStatus();
   fetchHighlightStatus();

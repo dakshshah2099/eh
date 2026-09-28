@@ -32,6 +32,82 @@
       </div>
     </div>
 
+    <!-- LLM Mode Card -->
+    <div class="card">
+      <div class="section-header" id="llmSectionHeader">
+        <span class="label">LLM Backend</span>
+        <div class="toggle-row">
+          <span class="toggle-label" id="llmModeLabel">Local</span>
+          <label class="toggle-switch" title="Switch between local fallback and cloud LLM">
+            <input type="checkbox" id="cloudModeToggle">
+            <span class="toggle-thumb"></span>
+          </label>
+          <span class="toggle-label">Cloud</span>
+        </div>
+      </div>
+
+      <div id="cloudSettings" class="cloud-settings hidden">
+        <div class="field-group">
+          <label class="field-label" for="providerSelect">Provider</label>
+          <select id="providerSelect" class="field-input field-select">
+            <optgroup label="Major Cloud">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="gemini">Google AI Studio (Gemini)</option>
+              <option value="vertex_ai">Google Vertex AI</option>
+              <option value="azure">Azure OpenAI</option>
+              <option value="bedrock">AWS Bedrock</option>
+            </optgroup>
+            <optgroup label="Fast Inference">
+              <option value="groq">Groq</option>
+              <option value="cerebras">Cerebras</option>
+              <option value="fireworks_ai">Fireworks AI</option>
+              <option value="together_ai">Together AI</option>
+              <option value="deepinfra">DeepInfra</option>
+              <option value="sambanova">SambaNova</option>
+            </optgroup>
+            <optgroup label="Open / Frontier Models">
+              <option value="deepseek">DeepSeek</option>
+              <option value="mistral">Mistral AI</option>
+              <option value="cohere">Cohere</option>
+              <option value="xai">xAI (Grok)</option>
+              <option value="perplexity">Perplexity AI</option>
+              <option value="openrouter">OpenRouter</option>
+            </optgroup>
+            <optgroup label="Local / Self-Hosted">
+              <option value="ollama">Ollama (local)</option>
+              <option value="vllm">vLLM (local)</option>
+              <option value="lm_studio">LM Studio (local)</option>
+              <option value="openai_compatible">Custom OpenAI-Compatible</option>
+            </optgroup>
+          </select>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="modelInput">Model Name</label>
+          <input type="text" id="modelInput" class="field-input" placeholder="e.g. gpt-4o, claude-3-5-sonnet, gemini-2.0-flash" />
+          <span class="field-hint" id="modelHint"></span>
+        </div>
+
+        <div class="field-group" id="apiKeyGroup">
+          <label class="field-label" for="apiKeyInput">API Key</label>
+          <div class="key-row">
+            <input type="password" id="apiKeyInput" class="field-input" placeholder="sk-..." autocomplete="off" />
+            <button id="toggleKeyVisibility" class="icon-btn" title="Show/hide key">👁</button>
+          </div>
+          <span class="field-hint">Stored locally in chrome.storage.local</span>
+        </div>
+
+        <div class="field-group" id="baseUrlGroup" style="display:none;">
+          <label class="field-label" for="baseUrlInput">Base URL</label>
+          <input type="text" id="baseUrlInput" class="field-input" placeholder="http://localhost:11434" />
+        </div>
+
+        <button id="saveLlmConfig" class="btn btn-save">Save Config</button>
+        <span id="saveStatus" class="save-status"></span>
+      </div>
+    </div>
+
     <div class="task-group" style="margin-bottom: 12px;">
       <label for="taskInput" style="font-size: 11px; font-weight: 600; color: #4b5563; display: block; margin-bottom: 4px;">Task Goal:</label>
       <input type="text" id="taskInput" value="Fill profile and submit form" style="width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;" />
@@ -43,7 +119,7 @@
     </div>
 
     <footer class="footer">
-      <span>Manifest V3 Lens</span>
+      <span>Manifest V3 Lens · LiteLLM</span>
     </footer>
   </div>
 

@@ -738,6 +738,25 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
           sendResponse({ success: true, summary });
           break;
         }
+        case 'SET_LLM_MODE': {
+          const mode = message.mode === 'cloud' ? 'cloud' : 'local';
+          await chrome.storage.local.set({ llmMode: mode });
+          console.log('[Background] LLM mode set to:', mode);
+          sendResponse({ success: true, mode });
+          break;
+        }
+        case 'GET_LLM_CONFIG': {
+          const data = await chrome.storage.local.get(['llmConfig', 'llmMode']);
+          sendResponse({ success: true, llmConfig: data.llmConfig || null, llmMode: data.llmMode || 'local' });
+          break;
+        }
+        case 'SET_LLM_CONFIG': {
+          const cfg = message.config || {};
+          await chrome.storage.local.set({ llmConfig: cfg });
+          console.log('[Background] LLM config saved:', cfg.provider, cfg.model);
+          sendResponse({ success: true });
+          break;
+        }
         default:
           sendResponse({ success: false, error: `Unknown message type: ${message.type}` });
           break;
