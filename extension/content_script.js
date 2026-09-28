@@ -1132,6 +1132,11 @@ async function executeActions(actions) {
 // Register message listener for requests from background or popup scripts
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message && message.type === 'PING') {
+      sendResponse({ success: true, pong: true });
+      return true;
+    }
+
     if (
       message &&
       (message.type === 'EXTRACT_DOM_SKELETON' ||

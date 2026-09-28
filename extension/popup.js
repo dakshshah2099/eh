@@ -47,21 +47,25 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleBtn.disabled = true;
     const actionType = currentRunning ? 'STOP_AGENT' : 'START_AGENT';
 
-    chrome.runtime.sendMessage({ type: actionType }, (response) => {
-      toggleBtn.disabled = false;
-      if (chrome.runtime.lastError) {
-        console.error('[Popup] Error toggling agent:', chrome.runtime.lastError.message);
-        statusInfo.textContent = `Error: ${chrome.runtime.lastError.message}`;
-        return;
-      }
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+      const activeTab = tabs && tabs[0];
+      const tabId = activeTab ? activeTab.id : null;
 
-      if (response && response.success) {
-        // Refresh status after state mutation
-        fetchStatus();
-      } else {
-        const err = (response && response.error) || 'Failed to toggle agent';
-        statusInfo.textContent = `Error: ${err}`;
-      }
+      chrome.runtime.sendMessage({ type: actionType, tabId, async: true }, (response) => {
+        toggleBtn.disabled = false;
+        if (chrome.runtime.lastError) {
+          console.error('[Popup] Error toggling agent:', chrome.runtime.lastError.message);
+          statusInfo.textContent = `Error: ${chrome.runtime.lastError.message}`;
+          return;
+        }
+
+        if (response && response.success) {
+          fetchStatus();
+        } else {
+          const err = (response && response.error) || 'Failed to toggle agent';
+          statusInfo.textContent = `Error: ${err}`;
+        }
+      });
     });
   });
 

@@ -162,15 +162,43 @@ async function extractDomSkeleton(tabId = null, options = {}) {
   let targetTabId = tabId;
   if (typeof chrome !== 'undefined' && chrome.tabs) {
     if (targetTabId == null && chrome.tabs.query) {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      targetTabId = activeTab?.id;
+      const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      targetTabId = tabs[0]?.id;
+      if (targetTabId == null) {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        targetTabId = activeTab?.id;
+      }
     }
 
     if (targetTabId != null && chrome.tabs.sendMessage) {
-      return await chrome.tabs.sendMessage(targetTabId, {
-        type: 'EXTRACT_DOM_SKELETON',
-        options
-      });
+      try {
+        return await chrome.tabs.sendMessage(targetTabId, {
+          type: 'EXTRACT_DOM_SKELETON',
+          options
+        });
+      } catch (err) {
+        if (
+          (err.message?.includes('Receiving end does not exist') ||
+           err.message?.includes('Could not establish connection')) &&
+          chrome.scripting?.executeScript
+        ) {
+          console.log(`[Pipeline] Injecting content script into tab ${targetTabId}...`);
+          try {
+            await chrome.scripting.executeScript({
+              target: { tabId: targetTabId },
+              files: ['content_script.js']
+            });
+            await new Promise(r => setTimeout(r, 150));
+            return await chrome.tabs.sendMessage(targetTabId, {
+              type: 'EXTRACT_DOM_SKELETON',
+              options
+            });
+          } catch (injectErr) {
+            console.warn(`[Pipeline] Failed to inject content script into tab ${targetTabId}:`, injectErr);
+          }
+        }
+        throw err;
+      }
     }
   }
 

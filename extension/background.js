@@ -125,6 +125,36 @@ export async function captureAndDownscale(tabId = null, maxDimension = 768, opti
 }
 
 /**
+ * Ensures the content script is loaded in the target tab.
+ * Dynamically injects content_script.js via chrome.scripting if missing.
+ * @param {number} tabId
+ */
+export async function ensureContentScript(tabId) {
+  if (!tabId || typeof chrome === 'undefined' || !chrome.scripting?.executeScript) {
+    return;
+  }
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+  } catch (err) {
+    if (
+      err.message?.includes('Receiving end does not exist') ||
+      err.message?.includes('Could not establish connection')
+    ) {
+      try {
+        console.log(`[Background] Injecting content script into tab ${tabId}...`);
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content_script.js']
+        });
+        await new Promise(resolve => setTimeout(resolve, 150));
+      } catch (e) {
+        console.warn(`[Background] Failed to dynamically inject content script into tab ${tabId}:`, e.message);
+      }
+    }
+  }
+}
+
+/**
  * Requests DOM skeleton extraction from the specified or active tab's content script.
  * @param {number|null} [tabId=null] - Target tab ID
  * @param {object} [options={}] - Extraction options (inViewportOnly, etc.)
@@ -133,12 +163,17 @@ export async function captureAndDownscale(tabId = null, maxDimension = 768, opti
 export async function extractDomSkeletonFromTab(tabId = null, options = {}) {
   let targetTabId = tabId;
   if (targetTabId == null) {
+    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    targetTabId = tabs[0]?.id;
+  }
+  if (targetTabId == null) {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     targetTabId = activeTab?.id;
   }
   if (targetTabId == null) {
     throw new Error('No target tab specified or active tab found');
   }
+  await ensureContentScript(targetTabId);
   return await chrome.tabs.sendMessage(targetTabId, {
     type: 'EXTRACT_DOM_SKELETON',
     options
@@ -154,12 +189,17 @@ export async function extractDomSkeletonFromTab(tabId = null, options = {}) {
 export async function executeActionInTab(tabId = null, action = {}) {
   let targetTabId = tabId;
   if (targetTabId == null) {
+    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    targetTabId = tabs[0]?.id;
+  }
+  if (targetTabId == null) {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     targetTabId = activeTab?.id;
   }
   if (targetTabId == null) {
     throw new Error('No target tab specified or active tab found');
   }
+  await ensureContentScript(targetTabId);
   return await chrome.tabs.sendMessage(targetTabId, {
     type: 'ACTION_EXECUTE',
     action
@@ -237,8 +277,12 @@ export async function startLoop(tabId = null, task = '', options = {}) {
   }
 
   if (targetTabId == null) {
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    targetTabId = activeTab?.id;
+    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    targetTabId = tabs[0]?.id;
+    if (targetTabId == null) {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      targetTabId = activeTab?.id;
+    }
   }
   if (targetTabId == null) {
     throw new Error('No target tab specified or active tab found');
