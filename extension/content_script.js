@@ -383,11 +383,13 @@ function extractDomSkeleton(root = (typeof document !== 'undefined' ? document.b
     const text = getElementText(el);
     const ariaLabel = getAriaLabel(el);
     const typeAttr = el.getAttribute ? (el.getAttribute('type') || (el.type || null)) : null;
-    const isContent = CONTENT_TAGS.has(tag) && text.length > 0;
+    const hasPiiAttr = Boolean(el.getAttribute && (el.getAttribute('data-pii-type') || el.getAttribute('data-pii')));
+    const isLeafText = (!el.children || el.children.length === 0) && text.length > 0;
+    const isContent = (CONTENT_TAGS.has(tag) || isLeafText) && text.length > 0;
     const isRoot = el === root;
 
     // Prune invisible/empty non-interactive containers with no kept children
-    const keepNode = isRoot || interactive || isContent || ariaLabel !== null || children.length > 0;
+    const keepNode = isRoot || interactive || isContent || ariaLabel !== null || hasPiiAttr || children.length > 0;
     if (!keepNode) {
       return null;
     }
@@ -403,6 +405,7 @@ function extractDomSkeleton(root = (typeof document !== 'undefined' ? document.b
       xpath: getXPath(el),
       id: el.id || null,
       name: el.getAttribute ? (el.getAttribute('name') || null) : null,
+      className: el.className || null,
       autocomplete: el.getAttribute ? (el.getAttribute('autocomplete') || (el.autocomplete || null)) : null,
       placeholder: el.getAttribute ? (el.getAttribute('placeholder') || null) : null,
       value: (tag === 'input' || tag === 'textarea') ? (el.value || null) : null,

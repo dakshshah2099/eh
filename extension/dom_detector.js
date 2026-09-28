@@ -168,6 +168,13 @@ function extractNodeAttributes(node) {
     ''
   );
 
+  const className = String(
+    node.className ||
+    node.class ||
+    (typeof node.getAttribute === 'function' ? node.getAttribute('class') : '') ||
+    ''
+  );
+
   const ariaLabel = String(
     node.ariaLabel ||
     node['aria-label'] ||
@@ -201,7 +208,7 @@ function extractNodeAttributes(node) {
     ''
   ).toLowerCase().trim();
 
-  return { tag, type, autocomplete, name, id, ariaLabel, placeholder, text, piiType };
+  return { tag, type, autocomplete, name, id, className, ariaLabel, placeholder, text, piiType };
 }
 
 /**
@@ -315,7 +322,7 @@ export function evaluateElementSensitivity(node, options = {}) {
     return null;
   }
 
-  const { tag, type, autocomplete, name, id, ariaLabel, placeholder, text, piiType } = extractNodeAttributes(node);
+  const { tag, type, autocomplete, name, id, className, ariaLabel, placeholder, text, piiType } = extractNodeAttributes(node);
 
   // --------------------------------------------------------------------------
   // Rule 0: Explicit data-pii-type / data-pii attribute
@@ -429,12 +436,13 @@ export function evaluateElementSensitivity(node, options = {}) {
   }
 
   // --------------------------------------------------------------------------
-  // Rule 4: name/id/aria-label/placeholder regex matching:
+  // Rule 4: name/id/className/aria-label/placeholder regex matching:
   // ssn|social|card|cvv|cvc|otp|pan|pin|password|secret|tax
   // --------------------------------------------------------------------------
   const attributesToTest = [
     { name: 'name', value: name },
     { name: 'id', value: id },
+    { name: 'className', value: className },
     { name: 'aria-label', value: ariaLabel },
     { name: 'placeholder', value: placeholder }
   ];
@@ -451,7 +459,33 @@ export function evaluateElementSensitivity(node, options = {}) {
     }
   }
 
-  // Optional: check associated label / text if enabled
+  // --------------------------------------------------------------------------
+  // Rule 5: Value / Text Content pattern detection (Card, SSN, Email)
+  // Catches visual credit cards, display numbers, and formatted PII strings
+  // --------------------------------------------------------------------------
+  const contentToInspect = [text, node.value].filter(Boolean).join(' ');
+  if (contentToInspect) {
+    if (/\b(?:\d{4}[ -]?){3}\d{4}\b/.test(contentToInspect)) {
+      return {
+        category: SENSITIVE_CATEGORIES.CARD,
+        rule: 'pattern_credit_card'
+      };
+    }
+    if (/\b\d{3}-\d{2}-\d{4}\b/.test(contentToInspect)) {
+      return {
+        category: SENSITIVE_CATEGORIES.SSN,
+        rule: 'pattern_ssn'
+      };
+    }
+    if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(contentToInspect)) {
+      return {
+        category: SENSITIVE_CATEGORIES.EMAIL,
+        rule: 'pattern_email'
+      };
+    }
+  }
+
+  // Optional: check associated label / text keywords if enabled
   if (options.checkText && text) {
     const keyword = findSensitiveKeyword(text);
     if (keyword) {
