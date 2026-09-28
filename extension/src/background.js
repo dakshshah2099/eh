@@ -553,14 +553,26 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
         case 'START_LOOP':
         case 'START_AGENT_LOOP':
         case 'START_AGENT': {
+          // Guard: load latest state to prevent duplicate starts
+          const state = await ensureState();
+          if (state.isRunning) {
+            sendResponse({ success: true, isRunning: true, message: 'Agent already running' });
+            break;
+          }
           const tabId = message.tabId ?? null;
           const task = message.task || message.taskDescription || '';
           const options = message.options || message;
+          // Optimistic early state update before loop initialises
+          agentState.isRunning = true;
+          agentState.lastStartedAt = Date.now();
+          agentState.currentTabId = tabId;
+          agentState.currentTask = task;
+          await chrome.storage.local.set({ agentState });
           if (message.async) {
             startLoop(tabId, task, options).catch(err => {
               console.error('[Background] Async loop error:', err);
             });
-            sendResponse({ success: true, isRunning: true, message: 'Loop started in background' });
+            sendResponse({ success: true, isRunning: true, message: 'Loop started' });
           } else {
             const res = await startLoop(tabId, task, options);
             sendResponse(res);

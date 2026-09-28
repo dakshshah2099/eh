@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
       statusBadge.className = 'badge badge-running';
       toggleBtn.textContent = 'Stop Agent';
       toggleBtn.className = 'btn btn-danger';
-      
+
       const timeStr = lastStartedAt ? new Date(lastStartedAt).toLocaleTimeString() : 'now';
       statusInfo.textContent = `Loop active since ${timeStr}`;
     } else {
@@ -45,7 +45,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   toggleBtn.addEventListener('click', () => {
     toggleBtn.disabled = true;
-    const actionType = currentRunning ? 'STOP_AGENT' : 'START_AGENT';
+    const isStarting = !currentRunning;
+    const actionType = isStarting ? 'START_AGENT' : 'STOP_AGENT';
+
+    // Optimistic UI — flip immediately so the user sees instant feedback
+    if (isStarting) {
+      updateUI(true, Date.now(), null);
+      statusInfo.textContent = 'Starting agent…';
+    } else {
+      updateUI(false, null, Date.now());
+      statusInfo.textContent = 'Stopping agent…';
+    }
 
     chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
       const activeTab = tabs && tabs[0];
@@ -56,14 +66,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chrome.runtime.lastError) {
           console.error('[Popup] Error toggling agent:', chrome.runtime.lastError.message);
           statusInfo.textContent = `Error: ${chrome.runtime.lastError.message}`;
+          fetchStatus(); // revert optimistic on error
           return;
         }
 
         if (response && response.success) {
-          fetchStatus();
+          fetchStatus(); // confirm real state
         } else {
           const err = (response && response.error) || 'Failed to toggle agent';
           statusInfo.textContent = `Error: ${err}`;
+          fetchStatus(); // revert optimistic on error
         }
       });
     });
