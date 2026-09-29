@@ -74,12 +74,28 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function resolveTargetTab(cb) {
+    if (!chrome.tabs || !chrome.tabs.query) {
+      cb(null);
+      return;
+    }
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs[0] && tabs[0].id != null) {
+        cb(tabs[0].id);
+        return;
+      }
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }, (fallbackTabs) => {
+        cb(fallbackTabs && fallbackTabs[0] && fallbackTabs[0].id != null ? fallbackTabs[0].id : null);
+      });
+    });
+  }
+
   toggleBtn.addEventListener('click', () => {
     toggleBtn.disabled = true;
     const isStarting = !currentRunning;
     const actionType = isStarting ? 'START_AGENT' : 'STOP_AGENT';
 
-    // Optimistic UI — flip immediately
+    // Optimistic UI — flip immediately for crisp feedback
     if (isStarting) {
       updateUI(true, Date.now(), null);
       statusInfo.textContent = 'Starting agent\u2026';
@@ -88,9 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
       statusInfo.textContent = 'Stopping agent\u2026';
     }
 
-    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
-      const activeTab = tabs && tabs[0];
-      const tabId = activeTab ? activeTab.id : null;
+    resolveTargetTab((tabId) => {
       const task = document.getElementById('taskInput')?.value?.trim() || 'Fill profile and submit form';
       chrome.runtime.sendMessage({ type: actionType, tabId, task, async: true }, (response) => {
         toggleBtn.disabled = false;
@@ -100,8 +114,12 @@ document.addEventListener('DOMContentLoaded', () => {
           fetchStatus();
           return;
         }
+
         if (response && response.success) {
-          fetchStatus();
+          // Confirmed by background — lock in the confirmed state without racing fetchStatus
+          const running = Boolean(response.isRunning ?? isStarting);
+          updateUI(running, isStarting ? Date.now() : null, !isStarting ? Date.now() : null);
+          statusInfo.textContent = running ? 'Loop active (running\u2026)' : 'Agent stopped';
         } else {
           const err = (response && response.error) || 'Failed to toggle agent';
           statusInfo.textContent = 'Error: ' + err;
@@ -110,6 +128,24 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   });
+
+  // Reactive state sync whenever background writes agentState to storage
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.agentState) {
+        const state = changes.agentState.newValue;
+        if (state) {
+          updateUI(state.isRunning, state.lastStartedAt, state.lastStoppedAt);
+          if (state.lastError) {
+            statusInfo.textContent = 'Error: ' + state.lastError;
+          } else if (state.isRunning) {
+            const stepText = state.stepCount > 0 ? ' (step ' + state.stepCount + ')' : '';
+            statusInfo.textContent = 'Loop active' + stepText;
+          }
+        }
+      }
+    });
+  }
 
   // ── Runtime backend info ─────────────────────────────────────────────────
   function fetchRuntimeStatus() {
