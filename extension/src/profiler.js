@@ -12,14 +12,18 @@ export const PROFILING_PHASES = [
   'capture_ms',
   'dom_extract_ms',
   'dom_detect_ms',
+  'vision_detect_ms',
   'face_detect_ms',
   'ocr_detect_ms',
   'region_merge_ms',
   'image_redact_ms',
   'dom_redact_ms',
+  'serialization_ms',
   'transport_ms',
+  'action_execution_ms',
   'total_client_ms'
 ];
+
 
 /**
  * Computes statistical summaries (mean, min, max, p50, p95) for an array of numbers.
@@ -92,15 +96,19 @@ export class LatencyProfiler {
       capture_ms: Number((timings.capture_ms ?? 0).toFixed(3)),
       dom_extract_ms: Number((timings.dom_extract_ms ?? 0).toFixed(3)),
       dom_detect_ms: Number((timings.dom_detect_ms ?? 0).toFixed(3)),
+      vision_detect_ms: Number((timings.vision_detect_ms ?? 0).toFixed(3)),
       face_detect_ms: Number((timings.face_detect_ms ?? 0).toFixed(3)),
       ocr_detect_ms: Number((timings.ocr_detect_ms ?? 0).toFixed(3)),
       region_merge_ms: Number((timings.region_merge_ms ?? 0).toFixed(3)),
       image_redact_ms: Number((timings.image_redact_ms ?? 0).toFixed(3)),
       dom_redact_ms: Number((timings.dom_redact_ms ?? 0).toFixed(3)),
+      serialization_ms: Number((timings.serialization_ms ?? 0).toFixed(3)),
       transport_ms: Number((timings.transport_ms ?? 0).toFixed(3)),
+      action_execution_ms: Number((timings.action_execution_ms ?? 0).toFixed(3)),
       total_client_ms: Number((timings.total_client_ms ?? 0).toFixed(3)),
       ...timings
     };
+
 
     this.records.push(entry);
     if (this.records.length > this.maxRecords) {

@@ -559,18 +559,38 @@ function resolveTarget(target) {
   const doc = typeof document !== 'undefined' ? document : null;
   if (!doc) return null;
 
-  // 1. Try CSS selector
-  const selector = target.target_selector || target.selector || target.cssSelector;
-  if (selector && typeof selector === 'string') {
+  // 1. Try element_id / target_element_id first (ticket 06 - primary target)
+  const elementId = target.target_element_id || target.element_id || target.id;
+  if (elementId && typeof elementId === 'string') {
     try {
-      if (typeof doc.querySelector === 'function') {
-        const el = doc.querySelector(selector);
+      if (typeof doc.getElementById === 'function') {
+        const el = doc.getElementById(elementId);
         if (el) return el;
       }
-    } catch (e) {
-      console.warn('[ActionExecutor] querySelector failed for:', selector, e);
+      if (typeof doc.querySelector === 'function') {
+        const cleanId = elementId.replace(/["'\\]/g, '');
+        const el = doc.querySelector(`[data-element-id="${cleanId}"], [id="${cleanId}"]`);
+        if (el) return el;
+      }
+    } catch (_) {}
+  }
+
+  // 2. Try CSS selector with safety check (reject script injection / dangerous constructs)
+  const selector = target.target_selector || target.selector || target.cssSelector;
+  if (selector && typeof selector === 'string') {
+    const isDangerous = /<script|javascript:|on\w+=/i.test(selector);
+    if (!isDangerous) {
+      try {
+        if (typeof doc.querySelector === 'function') {
+          const el = doc.querySelector(selector);
+          if (el) return el;
+        }
+      } catch (e) {
+        console.warn('[ActionExecutor] querySelector failed for:', selector, e);
+      }
     }
   }
+
 
   // 2. Try XPath
   const xpath = target.target_xpath || target.xpath;
@@ -1098,9 +1118,100 @@ async function executeType(target, text, options = {}) {
 }
 
 /**
+ * Retrieves a credential secret from session storage or memory.
+ */
+async function getLocalSecret(alias) {
+  if (!alias) return null;
+  const key = String(alias);
+  if (typeof chrome !== 'undefined' && chrome.storage?.session?.get) {
+    try {
+      const res = await chrome.storage.session.get([`secret_${key}`]);
+      if (res && res[`secret_${key}`]) {
+        return res[`secret_${key}`];
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+/**
+ * Validates an action item schema in content script.
+ */
+function validateAction(action) {
+  if (!action || typeof action !== 'object') {
+    return { valid: false, error: 'Action must be an object' };
+  }
+  const rawType = action.type || action.action;
+  if (!rawType || typeof rawType !== 'string') {
+    return { valid: false, error: 'Missing or invalid action type' };
+  }
+  const type = rawType.toLowerCase();
+  const allowed = new Set(['click', 'type', 'input', 'scroll', 'wait', 'navigate', 'fill_secret']);
+  if (!allowed.has(type)) {
+    return { valid: false, error: `Unsupported action type: "${type}"` };
+  }
+  const selector = action.target_selector || action.selector || action.target?.selector;
+  if (selector && typeof selector === 'string' && /<script|javascript:|on\w+=/i.test(selector)) {
+    return { valid: false, error: `Potentially unsafe script injection in selector: "${selector}"` };
+  }
+  const bbox = action.target_bbox || action.bbox || action.target?.bbox;
+  if (bbox !== undefined && bbox !== null) {
+    if (!Array.isArray(bbox) || bbox.length < 4) {
+      return { valid: false, error: 'target_bbox must be an array of at least 4 numbers' };
+    }
+    const [x, y, w, h] = bbox.map(Number);
+    if (isNaN(x) || isNaN(y) || isNaN(w) || isNaN(h) || x < 0 || y < 0 || w < 0 || h < 0) {
+      return { valid: false, error: 'target_bbox values must be valid non-negative numbers' };
+    }
+  }
+  if (type === 'fill_secret') {
+    const key = action.secret_key || action.secret_alias || action.secretKey;
+    if (!key || typeof key !== 'string') {
+      return { valid: false, error: 'fill_secret requires a valid secret_key alias' };
+    }
+  }
+  return { valid: true };
+}
+
+/**
+ * Executes secret fill from the local extension vault.
+ * Raw secret values NEVER leave the client browser.
+ */
+async function executeFillSecret(params = {}) {
+  const secretKey = params.secret_key || params.secret_alias || params.secretKey;
+  if (!secretKey) {
+    throw new Error('fill_secret action requires a secret_key alias');
+  }
+
+  const secretValue = await getLocalSecret(secretKey);
+  if (secretValue === null || secretValue === undefined) {
+    throw new Error(`Vault Error: Secret "${secretKey}" not found in local credential vault`);
+  }
+
+  const targetEl = resolveTarget(params);
+  if (!targetEl) {
+    throw new Error(`Target element not found for fill_secret: ${JSON.stringify(params)}`);
+  }
+
+  const fillResult = await executeType(targetEl, secretValue, {
+    ...params,
+    allowSensitive: true,
+    force: true
+  });
+
+  return {
+    success: true,
+    action: 'fill_secret',
+    target: fillResult.target,
+    secret_key: secretKey,
+    filled: true
+  };
+}
+
+/**
  * Dispatches an action object to the appropriate executor.
  *
- * @param {Object} action - Action definition (type: 'click'|'scroll'|'type', params...)
+ * @param {Object} action - Action definition (type: 'click'|'scroll'|'type'|'fill_secret'|'wait', params...)
  * @returns {Promise<Object>} Execution result
  */
 async function executeAction(action) {
@@ -1112,11 +1223,12 @@ async function executeAction(action) {
     ? { ...action.action, ...action }
     : action;
 
-  const rawType = actionData.type || actionData.action || action.type;
-  if (!rawType) {
-    throw new Error('Action type not specified');
+  const valResult = validateAction(actionData);
+  if (!valResult.valid) {
+    throw new Error(`Action schema validation failed: ${valResult.error}`);
   }
 
+  const rawType = actionData.type || actionData.action || action.type;
   const type = String(rawType).toLowerCase();
 
   switch (type) {
@@ -1127,6 +1239,12 @@ async function executeAction(action) {
     case 'type':
     case 'input':
       return await executeType(actionData);
+    case 'fill_secret':
+      return await executeFillSecret(actionData);
+    case 'wait':
+      const ms = Number(actionData.delay_ms || actionData.ms || 500);
+      await new Promise(r => setTimeout(r, ms));
+      return { success: true, action: 'wait', duration: ms };
     default:
       throw new Error(`Unsupported action type: "${type}"`);
   }
@@ -1136,9 +1254,10 @@ async function executeAction(action) {
  * Executes a single action or a list of actions sequentially.
  *
  * @param {Object|Array<Object>} actions - Action or array of actions
+ * @param {object} [options={}]
  * @returns {Promise<Object>} Execution result(s)
  */
-async function executeActions(actions) {
+async function executeActions(actions, options = {}) {
   if (!actions) {
     throw new Error('No actions provided');
   }
@@ -1146,6 +1265,11 @@ async function executeActions(actions) {
   const list = Array.isArray(actions) ? actions : [actions];
   if (list.length === 0) {
     return { success: true, results: [] };
+  }
+
+  const maxActions = options.maxActions ?? 10;
+  if (list.length > maxActions) {
+    throw new Error(`Exceeded max actions per response cap: ${list.length} > ${maxActions}`);
   }
 
   const results = [];
@@ -1156,6 +1280,7 @@ async function executeActions(actions) {
 
   return results.length === 1 ? results[0] : { success: true, results };
 }
+
 
 // PII Highlight state management
 let piiHighlightState = {
@@ -1461,6 +1586,9 @@ if (typeof window !== 'undefined') {
   window.executeType = executeType;
   window.executeAction = executeAction;
   window.executeActions = executeActions;
+  window.validateAction = validateAction;
+  window.executeFillSecret = executeFillSecret;
+  window.getLocalSecret = getLocalSecret;
   window.applyPiiHighlights = applyPiiHighlights;
   window.clearPiiHighlights = clearPiiHighlights;
   window.getPiiHighlightStatus = getPiiHighlightStatus;
@@ -1488,9 +1616,13 @@ if (typeof module !== 'undefined' && module.exports) {
     executeType,
     executeAction,
     executeActions,
+    validateAction,
+    executeFillSecret,
+    getLocalSecret,
     applyPiiHighlights,
     clearPiiHighlights,
     getPiiHighlightStatus,
     togglePiiHighlights
   };
 }
+

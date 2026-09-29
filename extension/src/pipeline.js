@@ -20,6 +20,7 @@ import { downscaleImage, calculateTargetDimensions, blobToBase64 } from './downs
 import { detectSensitiveDomElements, extractSemanticIdentities, correlateFaceWithHeadings } from './dom_detector.js';
 import { detectFaces } from './face_detector.js';
 import { detectSensitiveOCRRegions } from './ocr_detector.js';
+import { runVisionInference } from './vision_inference.js';
 import { mergeSensitiveRegions } from './region_merger.js';
 import { redactCanvas, canvasToDataUrl } from './image_redaction.js';
 import { redactDomSkeleton } from './dom_redaction.js';
@@ -241,7 +242,7 @@ export function assertPayloadSanitized(sanitizedPayload, rawDom, rawImage = '') 
   if (rawImage && rawImage.length > 50 && sanitizedPayload.image_base64 === rawImage) {
     // Only throw if there were sensitive regions that should have altered the image
     if (Array.isArray(sanitizedPayload.redaction_map) && sanitizedPayload.redaction_map.length > 0) {
-      console.warn('[Pipeline] Warning: image_base64 matches raw unredacted image despite detected sensitive regions');
+      throw new Error('[Pipeline] SecurityError: image_base64 matches raw unredacted image despite detected sensitive regions');
     }
   }
 
@@ -255,7 +256,7 @@ export function assertPayloadSanitized(sanitizedPayload, rawDom, rawImage = '') 
 
   for (const pattern of sensitiveChecks) {
     if (pattern.test(domJson) && !domJson.includes('[REDACTED_')) {
-      console.warn('[Pipeline] Potential unredacted sensitive pattern detected in sanitized DOM');
+      throw new Error('[Pipeline] SecurityError: Potential unredacted sensitive pattern detected in sanitized DOM');
     }
   }
 }
@@ -330,15 +331,20 @@ export async function executePipeline(options = {}) {
   // Acquire / construct canvas for visual detectors and image redaction
   let canvas = downscaleResult.canvas || null;
   if (!canvas) {
-    canvas = await createCanvasFromSource(
-      downscaleResult.dataUrl || rawImageDataUrl,
-      downscaleResult.width,
-      downscaleResult.height
-    );
+    try {
+      canvas = await createCanvasFromSource(
+        downscaleResult.dataUrl || rawImageDataUrl,
+        downscaleResult.width,
+        downscaleResult.height
+      );
+    } catch (err) {
+      throw new Error(`[Pipeline] SecurityError: Failed to create canvas: ${err.message}`);
+    }
   }
-  if (canvas) {
-    ensureCanvasContextSafety(canvas);
+  if (!canvas) {
+    throw new Error('[Pipeline] SecurityError: Failed to create canvas from image source');
   }
+  ensureCanvasContextSafety(canvas);
 
   const scale = downscaleResult.scale || 1.0;
   const capture_ms = Number((performance.now() - tCaptureStart).toFixed(3));
@@ -368,17 +374,14 @@ export async function executePipeline(options = {}) {
   // STEP 3: Detect sensitive DOM elements (10)
   // =========================================================================
   const tDomDetectStart = performance.now();
-  let domRegions = [];
   const semanticNames = extractSemanticIdentities(rawDomSkeleton);
-  try {
-    domRegions = detectSensitiveDomElements(rawDomSkeleton, {
-      names: semanticNames,
-      ...(options.domDetectorOptions || options.domOptions || {})
-    });
-  } catch (err) {
-    console.warn('[Pipeline] DOM sensitivity detector error:', err.message);
-    domRegions = [];
-  }
+  const domDetectFn = typeof options.detectSensitiveDomElements === 'function'
+    ? options.detectSensitiveDomElements
+    : detectSensitiveDomElements;
+  const domRegions = await domDetectFn(rawDomSkeleton, {
+    names: semanticNames,
+    ...(options.domDetectorOptions || options.domOptions || {})
+  });
 
   // Map DOM bounding boxes to canvas coordinate space if screenshot was scaled
   const scaledDomRegions = domRegions.map((r) => {
@@ -408,12 +411,10 @@ export async function executePipeline(options = {}) {
   if (Array.isArray(options.faceRegions)) {
     faceRegions = options.faceRegions;
   } else if (options.enableFaceDetection !== false && canvas) {
-    try {
-      faceRegions = await detectFaces(canvas, { confidenceThreshold: 0.5, ...(options.faceOptions || {}) });
-    } catch (err) {
-      console.warn('[Pipeline] Face detector skipped or failed:', err.message);
-      faceRegions = [];
-    }
+    const faceDetectFn = typeof options.detectFaces === 'function'
+      ? options.detectFaces
+      : detectFaces;
+    faceRegions = await faceDetectFn(canvas, { confidenceThreshold: 0.5, ...(options.faceOptions || {}) });
   }
   const face_detect_ms = Number((performance.now() - tFaceStart).toFixed(3));
   console.log(`[Pipeline] Step 4 Complete: Detected ${faceRegions.length} face regions [${face_detect_ms.toFixed(2)}ms]`);
@@ -426,15 +427,48 @@ export async function executePipeline(options = {}) {
   if (Array.isArray(options.ocrRegions)) {
     ocrRegions = options.ocrRegions;
   } else if (options.enableOcrDetection !== false && canvas) {
-    try {
-      ocrRegions = await detectSensitiveOCRRegions(canvas, options.ocrOptions || {});
-    } catch (err) {
-      console.warn('[Pipeline] OCR detector skipped or failed:', err.message);
-      ocrRegions = [];
-    }
+    const ocrDetectFn = typeof options.detectSensitiveOCRRegions === 'function'
+      ? options.detectSensitiveOCRRegions
+      : detectSensitiveOCRRegions;
+    ocrRegions = await ocrDetectFn(canvas, options.ocrOptions || {});
   }
   const ocr_detect_ms = Number((performance.now() - tOcrStart).toFixed(3));
   console.log(`[Pipeline] Step 5 Complete: Detected ${ocrRegions.length} sensitive OCR regions [${ocr_detect_ms.toFixed(2)}ms]`);
+
+  // =========================================================================
+  // STEP 5B: Run UI element vision detector on canvas (09)
+  // =========================================================================
+  const tVisionStart = performance.now();
+  let uiRegions = [];
+  const shouldRunVision = Array.isArray(options.uiRegions)
+    || typeof options.runVisionInference === 'function'
+    || Boolean(options.enableVisionInference);
+
+  if (Array.isArray(options.uiRegions)) {
+    uiRegions = options.uiRegions;
+  } else if (shouldRunVision && canvas) {
+    const visionDetectFn = typeof options.runVisionInference === 'function'
+      ? options.runVisionInference
+      : runVisionInference;
+    try {
+      const detectedUI = await visionDetectFn(canvas, options.visionOptions || {});
+      uiRegions = (detectedUI || []).map(item => ({
+        bbox: item.bbox,
+        category: item.label || 'ui_element',
+        source: 'vision',
+        confidence: item.confidence ?? 0.8,
+        label: item.label
+      }));
+    } catch (err) {
+      if (options.failClosedOnVisionError) {
+        throw new Error(`[Pipeline] SecurityError: Vision model inference failed: ${err.message}`);
+      }
+      console.warn('[Pipeline] Vision model inference error:', err.message);
+      uiRegions = [];
+    }
+  }
+  const vision_detect_ms = Number((performance.now() - tVisionStart).toFixed(3));
+  console.log(`[Pipeline] Step 5B Complete: Detected ${uiRegions.length} UI vision elements [${vision_detect_ms.toFixed(2)}ms]`);
 
   // =========================================================================
   // STEP 6: Merge all sensitive regions with region_merger.js (13)
@@ -471,7 +505,7 @@ export async function executePipeline(options = {}) {
 
   const allDomRegions = [...scaledDomRegions, ...scaledFaceHeadings];
 
-  const mergedRegions = mergeSensitiveRegions(allDomRegions, faceRegions, ocrRegions, {
+  const mergedRegions = mergeSensitiveRegions(allDomRegions, faceRegions, ocrRegions, uiRegions, {
     ...(options.mergerOptions || {}),
     preserveExtraFields: true
   });
@@ -485,9 +519,16 @@ export async function executePipeline(options = {}) {
   let redactedImageDataUrl = '';
   let redactedImageBase64 = '';
 
-  if (canvas) {
-    ensureCanvasContextSafety(canvas);
-    const redactResult = redactCanvas(canvas, mergedRegions, {
+  if (!canvas) {
+    throw new Error('[Pipeline] SecurityError: No canvas available for image redaction');
+  }
+
+  ensureCanvasContextSafety(canvas);
+  try {
+    const redactCanvasFn = typeof options.redactCanvas === 'function'
+      ? options.redactCanvas
+      : redactCanvas;
+    const redactResult = redactCanvasFn(canvas, mergedRegions, {
       ...(options.imageRedactionOptions || {}),
       returnType: 'both'
     });
@@ -499,10 +540,12 @@ export async function executePipeline(options = {}) {
       redactedImageDataUrl = resolved.dataUrl || (typeof resolved.toDataURL === 'function' ? resolved.toDataURL() : '');
       redactedImageBase64 = resolved.base64 || (redactedImageDataUrl.includes(',') ? redactedImageDataUrl.split(',')[1] : redactedImageDataUrl);
     }
-  } else {
-    // Fallback: If no canvas is available, use downscaled result data URL
-    redactedImageDataUrl = downscaleResult.dataUrl || '';
-    redactedImageBase64 = downscaleResult.base64 || '';
+  } catch (err) {
+    throw new Error(`[Pipeline] SecurityError: Canvas redaction failed: ${err.message}`);
+  }
+
+  if (!redactedImageDataUrl && !redactedImageBase64) {
+    throw new Error('[Pipeline] SecurityError: Canvas redaction produced empty image output');
   }
   const image_redact_ms = Number((performance.now() - tImageRedactStart).toFixed(3));
   console.log(`[Pipeline] Step 7 Complete: Redacted canvas image [${image_redact_ms.toFixed(2)}ms]`);
@@ -550,19 +593,36 @@ export async function executePipeline(options = {}) {
   console.log(`[Pipeline] Step 8 Complete: Redacted DOM skeleton text & values [${dom_redact_ms.toFixed(2)}ms]`);
 
   // =========================================================================
-  // STEP 9: Construct sanitized payload
+  // STEP 9: Construct sanitized payload (Serialization)
   // =========================================================================
+  const tSerializationStart = performance.now();
   const sanitizedPayload = buildPayload({
     task,
     dom_skeleton: redactedDom,
     image_base64: redactedImageDataUrl || redactedImageBase64,
     viewport,
-    redaction_map: mergedRegions
+    coordinate_space: options.coordinate_space || 'viewport',
+    image: {
+      width: canvas.width || viewport.width,
+      height: canvas.height || viewport.height,
+      scale: scale || 1.0
+    },
+    redaction_map: mergedRegions,
+    ui_elements: uiRegions,
+    llmConfig: options.llmConfig,
+    provider: options.provider,
+    model: options.model,
+    baseUrl: options.baseUrl || options.base_url,
+    apiKey: options.apiKey || options.api_key,
+    session_id: options.session_id || options.sessionId,
+    task_id: options.task_id || options.taskId
   });
+
 
   // Verify that sanitized payload does not expose raw PII
   assertPayloadSanitized(sanitizedPayload, rawDomSkeleton, rawImageDataUrl);
-  console.log('[Pipeline] Step 9 Complete: Sanitized payload constructed conforming to PlanRequest schema');
+  const serialization_ms = Number((performance.now() - tSerializationStart).toFixed(3));
+  console.log(`[Pipeline] Step 9 Complete: Sanitized payload constructed conforming to PlanRequest schema [${serialization_ms.toFixed(2)}ms]`);
 
   // =========================================================================
   // STEP 10: Send ONLY sanitized payload via transport.js (05)
@@ -589,15 +649,19 @@ export async function executePipeline(options = {}) {
     dom_detect_ms,
     face_detect_ms,
     ocr_detect_ms,
+    vision_detect_ms,
     region_merge_ms,
     image_redact_ms,
     dom_redact_ms,
+    serialization_ms,
     transport_ms,
+    action_execution_ms: Number((options.action_execution_ms ?? 0).toFixed(3)),
     total_client_ms
   };
 
   const profilerInstance = options.profiler || defaultProfiler;
   if (profilerInstance && options.recordProfiling !== false) {
+
     profilerInstance.record(timings);
   }
 

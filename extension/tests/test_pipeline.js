@@ -481,4 +481,261 @@ test('Pipeline assertPayloadSanitized validates payload and flags unredacted con
   assert.throws(() => {
     assertPayloadSanitized(null);
   }, /Invalid sanitized payload/);
+
+  // Unredacted sensitive pattern in DOM skeleton throws SecurityError
+  const leakyDomPayload = {
+    task: 'Leaky DOM',
+    dom_skeleton: { value: 'plaintext-secret-password-123' },
+    image_base64: 'data:image/png;base64,redacted',
+    viewport: { width: 100, height: 100 },
+    redaction_map: []
+  };
+  assert.throws(() => {
+    assertPayloadSanitized(leakyDomPayload, {}, '');
+  }, /SecurityError/);
+
+  // Raw image matches sanitized payload despite redactions throws SecurityError
+  const leakyImagePayload = {
+    task: 'Leaky Image',
+    dom_skeleton: { value: '[REDACTED_PASSWORD]' },
+    image_base64: 'data:image/png;base64,identical-raw-image-content-longer-than-50-chars-here',
+    viewport: { width: 100, height: 100 },
+    redaction_map: [{ bbox: [0, 0, 10, 10], category: 'password' }]
+  };
+  assert.throws(() => {
+    assertPayloadSanitized(
+      leakyImagePayload,
+      {},
+      'data:image/png;base64,identical-raw-image-content-longer-than-50-chars-here'
+    );
+  }, /SecurityError/);
 });
+
+test('Fail-Closed Privacy: Detector throws -> assert fetch never called and pipeline rejects', async () => {
+  let fetchCallCount = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (...args) => {
+    fetchCallCount++;
+    return originalFetch(...args);
+  };
+
+  try {
+    const canvas = createMockCanvas(200, 200);
+    const domSkeleton = { tag: 'div', text: 'normal page' };
+
+    await assert.rejects(
+      async () => {
+        await executePipeline({
+          task: 'Detector failure test',
+          canvas,
+          domSkeleton,
+          serverUrl: 'http://127.0.0.1:9999/api/plan',
+          sendToServer: true,
+          detectSensitiveDomElements: () => {
+            throw new Error('Simulated DOM detector crash');
+          }
+        });
+      },
+      /Simulated DOM detector crash/
+    );
+
+    assert.equal(fetchCallCount, 0, 'Outbound fetch must NEVER be called when detector throws');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Fail-Closed Privacy: Canvas creation/redaction failure -> assert SecurityError thrown and fetch never called', async () => {
+  let fetchCallCount = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (...args) => {
+    fetchCallCount++;
+    return originalFetch(...args);
+  };
+
+  try {
+    const canvas = createMockCanvas(200, 200);
+    const domSkeleton = { tag: 'div', text: 'normal page' };
+
+    // Case 1: Redaction failure throws SecurityError
+    await assert.rejects(
+      async () => {
+        await executePipeline({
+          task: 'Redaction failure test',
+          canvas,
+          domSkeleton,
+          serverUrl: 'http://127.0.0.1:9999/api/plan',
+          sendToServer: true,
+          redactCanvas: () => {
+            throw new Error('Canvas 2D context failure during redaction');
+          }
+        });
+      },
+      /SecurityError/
+    );
+
+    assert.equal(fetchCallCount, 0, 'Outbound fetch must NEVER be called when redaction fails');
+
+    // Case 2: Canvas creation failure throws SecurityError
+    await assert.rejects(
+      async () => {
+        await executePipeline({
+          task: 'Canvas creation failure test',
+          image: 'invalid-non-image-source',
+          serverUrl: 'http://127.0.0.1:9999/api/plan',
+          sendToServer: true,
+          downscaleResult: {
+            canvas: null,
+            dataUrl: '',
+            width: 0,
+            height: 0
+          }
+        });
+      },
+      /SecurityError/
+    );
+
+    assert.equal(fetchCallCount, 0, 'Outbound fetch must NEVER be called when canvas creation fails');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Fail-Closed Privacy: assertPayloadSanitized violation -> assert error thrown and fetch never called', async () => {
+  let fetchCallCount = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (...args) => {
+    fetchCallCount++;
+    return originalFetch(...args);
+  };
+
+  try {
+    const canvas = createMockCanvas(200, 200);
+    // Unredacted sensitive cleartext value bypassing normal redaction
+    const rawDom = {
+      tag: 'input',
+      type: 'text',
+      id: 'custom-leaky-input',
+      value: 'UnredactedSecretPassword12345!'
+    };
+
+    await assert.rejects(
+      async () => {
+        await executePipeline({
+          task: 'Sanitization assertion failure test',
+          canvas,
+          domSkeleton: rawDom,
+          serverUrl: 'http://127.0.0.1:9999/api/plan',
+          sendToServer: true,
+          // Custom domRedactionOptions or mock redactDomSkeleton that fails to redact
+          domRedactionOptions: {
+            customRules: []
+          },
+          detectSensitiveDomElements: () => [], // Intentionally simulate missed detection
+          enableFaceDetection: false,
+          enableOcrDetection: false
+        });
+      },
+      /SecurityError/
+    );
+
+    assert.equal(fetchCallCount, 0, 'Outbound fetch must NEVER be called when assertPayloadSanitized fails');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('UI Vision Integration: runVisionInference is invoked and produces source: "vision" in payload', async () => {
+  let visionCalled = 0;
+  const mockVisionInference = async (canvas, options) => {
+    visionCalled++;
+    return [
+      {
+        bbox: [15, 25, 120, 40],
+        label: 'button',
+        confidence: 0.95
+      }
+    ];
+  };
+
+  const canvas = createMockCanvas(300, 300);
+  const domSkeleton = { tag: 'div', text: 'Safe UI page' };
+
+  let capturedPayload = null;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    capturedPayload = JSON.parse(opts.body);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        actions: [{ type: 'click', target_selector: 'button', reason: 'Click test' }],
+        task_complete: true,
+        confidence: 1.0
+      })
+    };
+  };
+
+  try {
+    const result = await executePipeline({
+      task: 'Test UI vision model integration',
+      canvas,
+      domSkeleton,
+      serverUrl: 'http://127.0.0.1:9999/api/plan',
+      sendToServer: true,
+      runVisionInference: mockVisionInference,
+      enableFaceDetection: false,
+      enableOcrDetection: false
+    });
+
+    assert.equal(visionCalled, 1, 'runVisionInference must be called exactly once per pipeline run');
+    assert.ok(capturedPayload, 'Sanitized payload should have been posted');
+    
+    // Assert presence of source: "vision" in redaction_map / merged regions
+    const visionRegion = capturedPayload.redaction_map.find(r => r.source === 'vision' || r.source.includes('vision'));
+    assert.ok(visionRegion, 'Payload redaction_map must include a region with source: "vision"');
+    assert.deepEqual(visionRegion.bbox, [15, 25, 120, 40]);
+
+    // Assert presence of ui_elements in payload
+    assert.ok(Array.isArray(capturedPayload.ui_elements), 'Payload must include ui_elements array');
+    assert.equal(capturedPayload.ui_elements[0].category, 'button');
+    assert.equal(capturedPayload.ui_elements[0].source, 'vision');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('UI Vision Integration: Fixture with visible button and icon produces source: "vision" in merged regions', async () => {
+  const canvas = createMockCanvas(320, 240);
+  const domSkeleton = {
+    tag: 'div',
+    children: [
+      { tag: 'h1', text: 'Welcome Dashboard' }
+    ]
+  };
+
+  const fixtureUIElements = [
+    { bbox: [20, 30, 100, 35], label: 'button', confidence: 0.92 },
+    { bbox: [200, 30, 32, 32], label: 'icon', confidence: 0.88 }
+  ];
+
+  const result = await executePipeline({
+    task: 'Fixture UI elements test',
+    canvas,
+    domSkeleton,
+    uiRegions: fixtureUIElements,
+    enableFaceDetection: false,
+    enableOcrDetection: false,
+    sendToServer: false
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.mergedRegions.length, 2);
+  const sources = result.mergedRegions.map(r => r.source);
+  assert.ok(sources.every(s => s === 'vision' || s.includes('vision')));
+  assert.deepEqual(result.mergedRegions[0].bbox, [20, 30, 100, 35]);
+  assert.deepEqual(result.mergedRegions[1].bbox, [200, 30, 32, 32]);
+});
+
+
+

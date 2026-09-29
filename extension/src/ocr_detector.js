@@ -418,7 +418,13 @@ export function detectCanvasTextRegions(canvasOrImageData, options = {}) {
  * @returns {Promise<Array<Object>>}
  */
 export async function runTesseractOCR(imageSource, options = {}) {
-  const tesseract = options.tesseract || globalThis.Tesseract;
+  let tesseract = options.tesseract || globalThis.Tesseract;
+  if (!tesseract) {
+    try {
+      const mod = await import('tesseract.js');
+      tesseract = mod.default || mod;
+    } catch (_) {}
+  }
   if (!tesseract) {
     throw new Error('Tesseract engine not found in environment or options');
   }

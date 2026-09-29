@@ -301,14 +301,28 @@ async function runAllTests() {
   assert.equal(canvasParsed.height, 80);
   assert.equal(canvasParsed.data.length, 120 * 80 * 4);
 
-  const canvasDetections = await runVisionInference(mockCanvas);
-  assert(Array.isArray(canvasDetections));
-  console.log('✓ Canvas getContext interface parsed and executed successfully.\n');
+  // Test 9: Ticket 11 / B11 calibration on uniform/blank images
+  console.log('Test 9: Testing UI detector calibration on blank/uniform image...');
+  const blankCanvas = {
+    width: 256,
+    height: 256,
+    getContext: (type) => ({
+      getImageData: (sx, sy, sw, sh) => ({
+        width: sw,
+        height: sh,
+        data: new Uint8ClampedArray(sw * sh * 4).fill(245) // Solid light gray background
+      })
+    })
+  };
+  const blankDetections = await runVisionInference(blankCanvas, { confidenceThreshold: 0.3 });
+  assert.equal(blankDetections.length, 0, `Expected 0 proposals on uniform blank canvas, got: ${blankDetections.length}`);
+  console.log('✓ Blank/uniform image produces 0 false-positive UI detections.\n');
 
-  console.log('🎉 All Ticket 09 Vision Model Inference tests passed successfully!');
+  console.log('🎉 All Ticket 09 and Ticket 11 Vision Model tests passed successfully!');
 }
 
 runAllTests().catch((err) => {
   console.error('❌ Test failed:', err);
   process.exit(1);
 });
+

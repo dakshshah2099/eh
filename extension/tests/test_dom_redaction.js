@@ -592,3 +592,22 @@ test('DOM Redaction: Sanitizes node href and src attributes', () => {
   assert.equal(sanitized.children[0].text, `View ${REDACTION_TOKENS.NAME} Profile`);
   assert.equal(sanitized.children[1].src, 'https://media.licdn.com/dms/image/users/[REDACTED_NAME]/avatar.jpg');
 });
+
+test('DOM Redaction: Regression test for email-in-sentence in-place substitution', () => {
+  const tree = {
+    tag: 'p',
+    text: 'Contact admin@example.com for support'
+  };
+  const sanitized = redactDomSkeleton(tree);
+  assert.equal(sanitized.text, 'Contact [REDACTED_EMAIL] for support');
+});
+
+test('DOM Redaction: Regression test for card-in-sentence in-place substitution', () => {
+  const tree = {
+    tag: 'p',
+    text: 'Card ending in 4532 0150 9823 8812 charged'
+  };
+  const sanitized = redactDomSkeleton(tree);
+  assert.equal(sanitized.text, 'Card ending in [REDACTED_CARD] charged');
+});
+

@@ -3,13 +3,20 @@ import test from 'node:test';
 import {
   resolveTarget,
   getCenterCoordinates,
+  convertCoordinates,
+  validateAction,
+  setLocalSecret,
+  getLocalSecret,
+  clearLocalSecrets,
   executeClick,
   executeScroll,
   executeType,
+  executeFillSecret,
   isSensitiveField,
   executeAction,
   executeActions
 } from '../src/action_executor.js';
+
 
 function createMockElement({
   tagName = 'div',
@@ -341,3 +348,165 @@ test('action_executor module: executeType simulates typing with full event dispa
     globalThis.window = origWin;
   }
 });
+
+test('Ticket 06 / B7: convertCoordinates accurately translates between spaces', () => {
+  // 1. canvas_scaled to viewport
+  const vpCoords = convertCoordinates({ x: 384, y: 216 }, { scale: 0.5 }, 'canvas_scaled');
+  assert.deepStrictEqual(vpCoords, { x: 768, y: 432 });
+
+  // 2. viewport to canvas_scaled
+  const canvasCoords = convertCoordinates([768, 432], { scale: 0.5 }, 'viewport');
+  assert.deepStrictEqual(canvasCoords, { x: 384, y: 216 });
+
+  // 3. scale 1.0 identity
+  const idCoords = convertCoordinates({ x: 100, y: 200 }, { scale: 1.0 });
+  assert.deepStrictEqual(idCoords, { x: 100, y: 200 });
+});
+
+test('Ticket 06 / B7: validateAction rejects malformed or dangerous actions', () => {
+  // Reject non-object
+  assert.strictEqual(validateAction(null).valid, false);
+
+  // Reject unsupported action type
+  assert.strictEqual(validateAction({ type: 'eval_js' }).valid, false);
+
+  // Reject invalid confidence range (<0 or >1)
+  assert.strictEqual(validateAction({ type: 'click', target_selector: '#btn', confidence: 1.5 }).valid, false);
+  assert.strictEqual(validateAction({ type: 'click', target_selector: '#btn', confidence: -0.1 }).valid, false);
+  assert.strictEqual(validateAction({ type: 'click', target_selector: '#btn', confidence: 0.85 }).valid, true);
+
+  // Reject unsafe script injection in selector
+  assert.strictEqual(validateAction({ type: 'click', target_selector: '<script>alert(1)</script>' }).valid, false);
+  assert.strictEqual(validateAction({ type: 'click', target_selector: 'div[onclick="javascript:evil()"]' }).valid, false);
+  assert.strictEqual(validateAction({ type: 'click', target_selector: 'button.primary-btn' }).valid, true);
+
+  // Reject invalid bbox format or negative values
+  assert.strictEqual(validateAction({ type: 'click', target_bbox: [10, 20] }).valid, false);
+  assert.strictEqual(validateAction({ type: 'click', target_bbox: [-10, 20, 100, 50] }).valid, false);
+  assert.strictEqual(validateAction({ type: 'click', target_bbox: [10, 20, 100, 50] }).valid, true);
+
+  // Reject missing target for click
+  assert.strictEqual(validateAction({ type: 'click' }).valid, false);
+  assert.strictEqual(validateAction({ type: 'click', target_element_id: 'btn_submit' }).valid, true);
+});
+
+test('Ticket 06 / B7: resolveTarget prioritizes target_element_id over fragile bbox/selectors', () => {
+  const origDoc = globalThis.document;
+  try {
+    const elById = createMockElement({ tagName: 'button', id: 'target_submit' });
+    const elByQuery = createMockElement({ tagName: 'button', id: 'generic_btn' });
+
+    globalThis.document = {
+      getElementById(id) {
+        if (id === 'target_submit') return elById;
+        return null;
+      },
+      querySelector(sel) {
+        if (sel === '#target_submit' || sel === '[id="target_submit"]') return elById;
+        return elByQuery;
+      },
+      elementFromPoint() {
+        return elByQuery;
+      }
+    };
+
+    // Primary target_element_id resolves directly to elById even if other locators point elsewhere
+    const resolved = resolveTarget({
+      target_element_id: 'target_submit',
+      target_selector: '#different_button',
+      target_bbox: [0, 0, 50, 50]
+    });
+    assert.strictEqual(resolved, elById);
+  } finally {
+    globalThis.document = origDoc;
+  }
+});
+
+test('Ticket 06 / B7: executeActions caps maximum actions per response', async () => {
+  const excessiveActions = Array.from({ length: 15 }, () => ({
+    type: 'wait',
+    delay_ms: 10
+  }));
+
+  await assert.rejects(
+    async () => await executeActions(excessiveActions, { maxActions: 10 }),
+    /Exceeded max actions per response cap/
+  );
+});
+
+test('Ticket 09 / B9: Capability-based secret autofill executes without leaking cleartext credentials', async () => {
+  const origDoc = globalThis.document;
+  const origWin = globalThis.window;
+  clearLocalSecrets();
+
+  try {
+    const pwdInput = createMockElement({
+      tagName: 'input',
+      id: 'user_password',
+      attributes: { type: 'password', name: 'password' }
+    });
+    pwdInput.value = '';
+
+    globalThis.document = {
+      getElementById(id) {
+        if (id === 'user_password') return pwdInput;
+        return null;
+      },
+      querySelector(sel) {
+        if (sel.includes('user_password')) return pwdInput;
+        return null;
+      }
+    };
+    globalThis.window = {
+      document: globalThis.document
+    };
+
+    // 1. Store secret in local vault only
+    const SECRET_ALIAS = 'ACCOUNT_PASSWORD';
+    const RAW_SECRET = 'SuperSecretP@ssw0rd!';
+    setLocalSecret(SECRET_ALIAS, RAW_SECRET);
+
+    // 2. Direct executeType without authorization is rejected
+    await assert.rejects(
+      async () => await executeType(pwdInput, RAW_SECRET),
+      /Safety Refusal/
+    );
+
+    // 3. Planner payload emits only secret token/alias: "ACCOUNT_PASSWORD"
+    const plannerAction = {
+      type: 'fill_secret',
+      target_element_id: 'user_password',
+      secret_key: SECRET_ALIAS
+    };
+
+    // Assert that RAW_SECRET is never present in action payload
+    const serializedAction = JSON.stringify(plannerAction);
+    assert.strictEqual(serializedAction.includes(RAW_SECRET), false);
+    assert.strictEqual(serializedAction.includes(SECRET_ALIAS), true);
+
+    // 4. Execute fill_secret via action executor
+    const res = await executeAction(plannerAction);
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(res.action, 'fill_secret');
+    assert.strictEqual(res.secret_key, SECRET_ALIAS);
+    // Value in DOM element is populated accurately
+    assert.strictEqual(pwdInput.value, RAW_SECRET);
+    // Raw secret is not leaked in return result
+    assert.strictEqual(res.value, undefined);
+
+    // 5. Unknown secret key raises vault error
+    await assert.rejects(
+      async () => await executeAction({
+        type: 'fill_secret',
+        target_element_id: 'user_password',
+        secret_key: 'NONEXISTENT_KEY'
+      }),
+      /Vault Error/
+    );
+  } finally {
+    clearLocalSecrets();
+    globalThis.document = origDoc;
+    globalThis.window = origWin;
+  }
+});
+

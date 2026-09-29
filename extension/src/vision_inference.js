@@ -526,6 +526,21 @@ function extractVisualProposals(rawImageData, maxProposals = 32) {
   const { width, height, data } = rawImageData;
   if (width < 8 || height < 8) return [];
 
+  // Check variance across image to immediately reject blank/uniform/flat background frames
+  let minLum = 255;
+  let maxLum = 0;
+  const sampleStep = Math.max(1, Math.floor((width * height) / 1000));
+  for (let i = 0; i < width * height; i += sampleStep) {
+    const idx = i * 4;
+    const l = Math.round(0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]);
+    if (l < minLum) minLum = l;
+    if (l > maxLum) maxLum = l;
+  }
+  // If overall image contrast is negligible (< 18), it's blank/uniform, return 0 proposals
+  if (maxLum - minLum < 18) {
+    return [];
+  }
+
   const candidates = [];
   const visited = new Uint8Array(width * height);
 
@@ -543,6 +558,7 @@ function extractVisualProposals(rawImageData, maxProposals = 32) {
 
   for (let y = 2; y < height - 2; y += stepY) {
     for (let x = 2; x < width - 2; x += stepX) {
+
       const c = lum[y * width + x];
       const right = lum[y * width + x + 1];
       const down = lum[(y + 1) * width + x];
@@ -630,11 +646,29 @@ export async function runVisionInference(imageCanvasOrBase64, options = {}) {
     DEFAULT_MODEL_DIMS.height
   );
 
+  // Calibration check: If image is completely uniform / blank (no contrast), return [] immediately
+  if (rawImageData && rawImageData.data) {
+    const data = rawImageData.data;
+    let minLum = 255;
+    let maxLum = 0;
+    const sampleStep = Math.max(1, Math.floor((origWidth * origHeight) / 1000));
+    for (let i = 0; i < origWidth * origHeight; i += sampleStep) {
+      const idx = i * 4;
+      const l = Math.round(0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]);
+      if (l < minLum) minLum = l;
+      if (l > maxLum) maxLum = l;
+    }
+    if (maxLum - minLum < 18) {
+      return [];
+    }
+  }
+
   const inputName = activeSession.inputNames[0] || 'images';
   const feeds = { [inputName]: inputTensor };
   const outputs = await activeSession.run(feeds);
 
   const candidates = [];
+
 
   // Parse model output tensors
   if (outputs.boxes && outputs.scores) {

@@ -255,4 +255,25 @@ import {
   assert.equal(regions[0].confidence, 0.97);
 }
 
+// Test 10: Fail-closed OCR test asserting non-empty OCR regions returned for test fixture with PII
+{
+  const fixtureCanvas = {
+    width: 600,
+    height: 400,
+    __ocrLines: [
+      { text: 'Billing contact: finance-dept@securecorp.com', bbox: [20, 40, 320, 24], confidence: 0.98 },
+      { text: 'Visa card on file: 4111 2222 3333 4444', bbox: [20, 80, 280, 24], confidence: 0.95 }
+    ]
+  };
+
+  const regions = await detectSensitiveOCRRegions(fixtureCanvas);
+  assert(Array.isArray(regions), 'OCR regions must be an array');
+  assert.equal(regions.length, 2, 'Must detect both email and credit card regions');
+  assert.equal(regions[0].category, 'email');
+  assert.equal(regions[1].category, 'card');
+  assert.equal(regions[0].source, 'ocr');
+  assert.equal(regions[1].source, 'ocr');
+}
+
 console.log('All OCR detector tests passed successfully!');
+

@@ -6,6 +6,187 @@
  */
 
 /**
+ * Translates coordinates between canvas scaled space and browser viewport space.
+ * @param {{x: number, y: number}|number[]} coords - Coordinate point [x, y] or {x, y}
+ * @param {object} [options={}] - Scaling options { scale, image: { scale, width, height }, viewport: { width, height } }
+ * @param {string} [fromSpace='canvas_scaled'] - Source coordinate space ('canvas_scaled' or 'viewport')
+ * @returns {{x: number, y: number}} Converted viewport coordinates
+ */
+export function convertCoordinates(coords, options = {}, fromSpace = 'canvas_scaled') {
+  if (!coords) return { x: 0, y: 0 };
+  let x = 0;
+  let y = 0;
+  if (Array.isArray(coords)) {
+    x = Number(coords[0]) || 0;
+    y = Number(coords[1]) || 0;
+  } else if (typeof coords === 'object') {
+    x = Number(coords.x ?? coords.clientX ?? coords.left ?? 0);
+    y = Number(coords.y ?? coords.clientY ?? coords.top ?? 0);
+  }
+
+  const scale = Number(options.scale || options.image?.scale || 1.0);
+  if (scale <= 0 || scale === 1.0) {
+    return { x: Math.round(x), y: Math.round(y) };
+  }
+
+  if (fromSpace === 'canvas_scaled') {
+    return {
+      x: Math.round(x / scale),
+      y: Math.round(y / scale)
+    };
+  } else if (fromSpace === 'viewport') {
+    return {
+      x: Math.round(x * scale),
+      y: Math.round(y * scale)
+    };
+  }
+
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
+/**
+ * Validates an action object against schema rules:
+ * - valid action type (click, type, scroll, wait, navigate, fill_secret)
+ * - target presence where required
+ * - target_bbox bounds and ranges (non-negative, length 4)
+ * - confidence range (0.0 to 1.0)
+ * - selector safety (no script/event handler injection)
+ *
+ * @param {object} action - Action item to validate
+ * @returns {{ valid: boolean, error?: string }} Validation outcome
+ */
+export function validateAction(action) {
+  if (!action || typeof action !== 'object') {
+    return { valid: false, error: 'Action must be an object' };
+  }
+
+  const rawType = action.type || action.action;
+  if (!rawType || typeof rawType !== 'string') {
+    return { valid: false, error: 'Missing or invalid action type' };
+  }
+
+  const type = rawType.toLowerCase();
+  const allowedTypes = new Set(['click', 'type', 'input', 'scroll', 'wait', 'navigate', 'fill_secret']);
+  if (!allowedTypes.has(type)) {
+    return { valid: false, error: `Unsupported action type: "${type}"` };
+  }
+
+  // Confidence check if present
+  if (action.confidence !== undefined && action.confidence !== null) {
+    const conf = Number(action.confidence);
+    if (isNaN(conf) || conf < 0.0 || conf > 1.0) {
+      return { valid: false, error: `Action confidence must be between 0.0 and 1.0, got: ${action.confidence}` };
+    }
+  }
+
+  // Selector safety check
+  const selector = action.target_selector || action.selector || action.target?.selector;
+  if (selector && typeof selector === 'string') {
+    if (/<script|javascript:|on\w+=/i.test(selector)) {
+      return { valid: false, error: `Potentially unsafe script injection in selector: "${selector}"` };
+    }
+  }
+
+  // BBox validity check
+  const bbox = action.target_bbox || action.bbox || action.target?.bbox || action.target?.target_bbox;
+  if (bbox !== undefined && bbox !== null) {
+    if (!Array.isArray(bbox) || bbox.length < 4) {
+      return { valid: false, error: 'target_bbox must be an array of at least 4 numbers [x, y, w, h]' };
+    }
+    const [x, y, w, h] = bbox.map(Number);
+    if (isNaN(x) || isNaN(y) || isNaN(w) || isNaN(h)) {
+      return { valid: false, error: 'target_bbox coordinates must be valid numbers' };
+    }
+    if (x < 0 || y < 0 || w < 0 || h < 0) {
+      return { valid: false, error: 'target_bbox values cannot be negative' };
+    }
+  }
+
+  // Target requirement check for target-dependent actions
+  if (type === 'click' || type === 'fill_secret') {
+    const hasTarget = Boolean(
+      action.target_element_id ||
+      action.element_id ||
+      action.target_selector ||
+      action.selector ||
+      action.target_xpath ||
+      action.xpath ||
+      action.target_bbox ||
+      action.bbox ||
+      action.point ||
+      action.target
+    );
+    if (!hasTarget) {
+      return { valid: false, error: `Action "${type}" requires a target locator (element_id, selector, or bbox)` };
+    }
+  }
+
+  if (type === 'fill_secret') {
+    const key = action.secret_key || action.secret_alias || action.secretKey;
+    if (!key || typeof key !== 'string') {
+      return { valid: false, error: 'fill_secret requires a valid secret_key alias' };
+    }
+  }
+
+  if (type === 'navigate') {
+    const url = action.url || action.target_url;
+    if (!url || typeof url !== 'string') {
+      return { valid: false, error: 'navigate action requires a url string' };
+    }
+  }
+
+  return { valid: true };
+}
+
+// Local in-memory / session vault for secret credentials
+const _secretVault = new Map();
+
+/**
+ * Stores a credential secret in the local browser vault.
+ * Secrets never leave the extension.
+ * @param {string} alias - Alias key (e.g., 'ACCOUNT_PASSWORD', 'LOGIN_SECRET')
+ * @param {string} value - Cleartext secret value
+ */
+export function setLocalSecret(alias, value) {
+  if (!alias) throw new Error('Secret alias must be provided');
+  _secretVault.set(String(alias), String(value || ''));
+  if (typeof chrome !== 'undefined' && chrome.storage?.session?.set) {
+    try {
+      chrome.storage.session.set({ [`secret_${alias}`]: String(value || '') });
+    } catch (_) {}
+  }
+}
+
+/**
+ * Retrieves a credential secret from local storage / memory.
+ * @param {string} alias
+ * @returns {Promise<string|null>}
+ */
+export async function getLocalSecret(alias) {
+  if (!alias) return null;
+  const key = String(alias);
+  if (_secretVault.has(key)) {
+    return _secretVault.get(key);
+  }
+  if (typeof chrome !== 'undefined' && chrome.storage?.session?.get) {
+    try {
+      const res = await chrome.storage.session.get([`secret_${key}`]);
+      if (res && res[`secret_${key}`]) {
+        return res[`secret_${key}`];
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+/**
+ * Clears stored secrets from local vault.
+ */
+export function clearLocalSecrets() {
+  _secretVault.clear();
+}
+
+/**
  * Computes center coordinates { x, y } from target specification.
  *
  * @param {Object} target - Locator or action parameter
@@ -99,16 +280,35 @@ export function resolveTarget(target) {
   const doc = typeof document !== 'undefined' ? document : null;
   if (!doc) return null;
 
-  // 1. Try CSS selector
-  const selector = target.target_selector || target.selector || target.cssSelector;
-  if (selector && typeof selector === 'string') {
+  // 1. Try element_id / target_element_id first (ticket 06 - primary target)
+  const elementId = target.target_element_id || target.element_id || target.id;
+  if (elementId && typeof elementId === 'string') {
     try {
-      if (typeof doc.querySelector === 'function') {
-        const el = doc.querySelector(selector);
+      if (typeof doc.getElementById === 'function') {
+        const el = doc.getElementById(elementId);
         if (el) return el;
       }
-    } catch (e) {
-      console.warn('[ActionExecutor] querySelector failed for:', selector, e);
+      if (typeof doc.querySelector === 'function') {
+        const cleanId = elementId.replace(/["'\\]/g, '');
+        const el = doc.querySelector(`[data-element-id="${cleanId}"], [id="${cleanId}"]`);
+        if (el) return el;
+      }
+    } catch (_) {}
+  }
+
+  // 2. Try CSS selector with safety check (reject script injection / dangerous constructs)
+  const selector = target.target_selector || target.selector || target.cssSelector;
+  if (selector && typeof selector === 'string') {
+    const isDangerous = /<script|javascript:|on\w+=/i.test(selector);
+    if (!isDangerous) {
+      try {
+        if (typeof doc.querySelector === 'function') {
+          const el = doc.querySelector(selector);
+          if (el) return el;
+        }
+      } catch (e) {
+        console.warn('[ActionExecutor] querySelector failed for:', selector, e);
+      }
     }
   }
 
@@ -637,9 +837,50 @@ export async function executeType(target, text, options = {}) {
 }
 
 /**
- * Dispatches an action object to the appropriate executor.
+ * Executes secret fill from the local extension vault.
+ * Cleartext secret values NEVER leave the browser and are never present in planner payloads.
  *
- * @param {Object} action - Action definition (type: 'click'|'scroll'|'type', params...)
+ * @param {object} params - { target, target_element_id, secret_key, ... }
+ * @returns {Promise<object>} Execution result
+ */
+export async function executeFillSecret(params = {}) {
+  const secretKey = params.secret_key || params.secret_alias || params.secretKey;
+  if (!secretKey) {
+    throw new Error('fill_secret action requires a secret_key alias');
+  }
+
+  const secretValue = await getLocalSecret(secretKey);
+  if (secretValue === null || secretValue === undefined) {
+    throw new Error(`Vault Error: Secret "${secretKey}" not found in local credential vault`);
+  }
+
+  const targetEl = resolveTarget(params);
+  if (!targetEl) {
+    throw new Error(`Target element not found for fill_secret: ${JSON.stringify(params)}`);
+  }
+
+  // Authorize fill for this internal secret execution
+  const fillResult = await executeType(targetEl, secretValue, {
+    ...params,
+    allowSensitive: true,
+    force: true
+  });
+
+  return {
+    success: true,
+    action: 'fill_secret',
+    target: fillResult.target,
+    secret_key: secretKey,
+    // Do NOT return the raw secret in the return value to prevent accidental logging/leakage
+    filled: true
+  };
+}
+
+/**
+ * Dispatches an action object to the appropriate executor.
+ * Validates action before execution.
+ *
+ * @param {Object} action - Action definition (type: 'click'|'scroll'|'type'|'fill_secret'|'wait', params...)
  * @returns {Promise<Object>} Execution result
  */
 export async function executeAction(action) {
@@ -651,11 +892,13 @@ export async function executeAction(action) {
     ? { ...action.action, ...action }
     : action;
 
-  const rawType = actionData.type || actionData.action || action.type;
-  if (!rawType) {
-    throw new Error('Action type not specified');
+  // Strict schema validation check
+  const valResult = validateAction(actionData);
+  if (!valResult.valid) {
+    throw new Error(`Action schema validation failed: ${valResult.error}`);
   }
 
+  const rawType = actionData.type || actionData.action || action.type;
   const type = String(rawType).toLowerCase();
 
   switch (type) {
@@ -666,6 +909,12 @@ export async function executeAction(action) {
     case 'type':
     case 'input':
       return await executeType(actionData);
+    case 'fill_secret':
+      return await executeFillSecret(actionData);
+    case 'wait':
+      const ms = Number(actionData.delay_ms || actionData.ms || 500);
+      await new Promise(r => setTimeout(r, ms));
+      return { success: true, action: 'wait', duration: ms };
     default:
       throw new Error(`Unsupported action type: "${type}"`);
   }
@@ -673,11 +922,13 @@ export async function executeAction(action) {
 
 /**
  * Executes a single action or a list of actions sequentially.
+ * Enforces max actions per response cap (default: 10).
  *
  * @param {Object|Array<Object>} actions - Action or array of actions
+ * @param {object} [options={}] - Options { maxActions: 10 }
  * @returns {Promise<Object>} Execution result(s)
  */
-export async function executeActions(actions) {
+export async function executeActions(actions, options = {}) {
   if (!actions) {
     throw new Error('No actions provided');
   }
@@ -685,6 +936,11 @@ export async function executeActions(actions) {
   const list = Array.isArray(actions) ? actions : [actions];
   if (list.length === 0) {
     return { success: true, results: [] };
+  }
+
+  const maxActions = options.maxActions ?? 10;
+  if (list.length > maxActions) {
+    throw new Error(`Exceeded max actions per response cap: ${list.length} > ${maxActions}`);
   }
 
   const results = [];
@@ -695,3 +951,4 @@ export async function executeActions(actions) {
 
   return results.length === 1 ? results[0] : { success: true, results };
 }
+

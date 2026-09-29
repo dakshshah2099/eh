@@ -346,6 +346,19 @@ export async function startLoop(tabId = null, task = '', options = {}) {
       console.log(`[Background] Loop step ${step}/${maxSteps} starting...`);
 
       // 1. Recapture screen + DOM skeleton and get plan from server
+      let currentLlmConfig = null;
+      try {
+        if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+          const stored = await chrome.storage.local.get(['llmConfig', 'llmMode']);
+          if (stored?.llmMode === 'cloud' && stored.llmConfig) {
+            currentLlmConfig = stored.llmConfig;
+          }
+        }
+      } catch (_) {}
+
+      const sessionId = opts.sessionId || opts.session_id || `tab_${targetTabId}`;
+      const taskId = opts.taskId || opts.task_id || `task_${Date.now()}`;
+
       const planResult = await captureAndSendPlan({
         task: targetTask,
         tabId: targetTabId,
@@ -353,10 +366,14 @@ export async function startLoop(tabId = null, task = '', options = {}) {
         redactionMap,
         maxDimension: opts.maxDimension ?? 768,
         captureOptions: opts.captureOptions ?? {},
-        domOptions: opts.domOptions ?? {}
+        domOptions: opts.domOptions ?? {},
+        llmConfig: currentLlmConfig || opts.llmConfig,
+        session_id: sessionId,
+        task_id: taskId
       });
 
       lastPlan = planResult.plan;
+
       const stepRecord = {
         step,
         timestamp: Date.now(),

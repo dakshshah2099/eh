@@ -63,14 +63,43 @@ export function buildPayload(options = {}) {
       }))
     : [];
 
+  const uiElements = options.ui_elements ?? options.uiElements ?? [];
+
+  // Ticket 06: Explicit coordinate space and image dimensions declaration
+  const coordinateSpace = options.coordinate_space ?? options.coordinateSpace ?? 'viewport';
+  const imgOpts = options.image || {};
+  const imageMeta = {
+    width: typeof imgOpts.width === 'number' ? imgOpts.width : (typeof options.imageWidth === 'number' ? options.imageWidth : viewport.width),
+    height: typeof imgOpts.height === 'number' ? imgOpts.height : (typeof options.imageHeight === 'number' ? options.imageHeight : viewport.height),
+    scale: typeof imgOpts.scale === 'number' ? imgOpts.scale : (typeof options.imageScale === 'number' ? options.imageScale : (typeof options.scale === 'number' ? options.scale : 1.0))
+  };
+
+  // Ticket 12 / B12: Wire popup LLM config directly into planning payload
+  const llm = options.llmConfig || options.llm || {};
+  const provider = options.provider ?? llm.provider;
+  const model = options.model ?? llm.model;
+  const baseUrl = options.base_url ?? options.baseUrl ?? llm.baseUrl;
+  const apiKey = options.api_key ?? options.apiKey ?? llm.apiKey;
+  const timestamp = typeof options.timestamp === 'number' ? options.timestamp : Date.now() / 1000.0;
+
   return {
     task,
     dom_skeleton: domSkeleton,
     image_base64: imageBase64,
     viewport,
-    redaction_map: redactionMap
+    coordinate_space: coordinateSpace,
+    image: imageMeta,
+    redaction_map: redactionMap,
+    timestamp,
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
+    ...(baseUrl ? { base_url: baseUrl } : {}),
+    ...(apiKey ? { api_key: apiKey } : {}),
+    ...(uiElements && uiElements.length > 0 ? { ui_elements: uiElements } : {})
   };
 }
+
+
 
 /**
  * Dispatches the plan payload to the backend server.

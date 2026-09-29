@@ -1,8 +1,8 @@
 # Redaction Evaluation Report (Ticket 19)
 
-**Execution Date:** 2026-09-28T15:28:10.384Z  
-**Evaluation Duration:** 2277ms  
-**Target Environment:** Demo Test Harness (`http://127.0.0.1:45811/index.html`)  
+**Execution Date:** 2026-09-29T17:12:34.203Z  
+**Evaluation Duration:** 1951ms  
+**Target Environment:** Demo Test Harness (`http://127.0.0.1:13118/index.html`)  
 **Browser Engine:** Google Chrome via Playwright (Headless MV3 Runner)
 
 ---
@@ -33,12 +33,12 @@ The 12 seeded PII entities from `window.__PII_MANIFEST__.entities` were evaluate
 | `#fullName` | name | `Jane Alice Doe` | ✓ | ✓ | ✅ REDACTED | `solid_black_mask` | **PASS** |
 | `#phoneNumber` | phone | `+1 (555) 234-5678` | ✓ | ✓ | ✅ REDACTED | `solid_black_mask` | **PASS** |
 | `#ssnInput` | ssn | `987-65-4321` | ✓ | ✓ | ✅ REDACTED | `redaction_mapped` | **PASS** |
-| `#creditCardNumber` | credit_card | `4532 0150 9823 8812` | ✓ | ✓ | ✅ REDACTED | `solid_black_mask` | **PASS** |
+| `#creditCardNumber` | credit_card | `4532 0150 9823 8812` | ✓ | ✓ | ✅ REDACTED | `gaussian_blur_or_pixelation` | **PASS** |
 | `#cardCvv` | credit_card | `842` | ✓ | ✓ | ✅ REDACTED | `solid_black_mask` | **PASS** |
-| `#bankAccount` | financial | `00987123456` | ✓ | ✓ | ✅ REDACTED | `solid_black_mask` | **PASS** |
-| `#routingNumber` | financial | `121000358` | ✓ | ✓ | ✅ REDACTED | `solid_black_mask` | **PASS** |
+| `#bankAccount` | financial | `00987123456` | ✓ | ✓ | ✅ REDACTED | `redaction_mapped` | **PASS** |
+| `#routingNumber` | financial | `121000358` | ✓ | ✓ | ✅ REDACTED | `gaussian_blur_or_pixelation` | **PASS** |
 | `#streetAddress` | address | `742 Evergreen Terrace` | ✓ | ✓ | ✅ REDACTED | `redaction_mapped` | **PASS** |
-| `#avatarContainer` | face | `[VISUAL_BIOMETRIC]` | ✓ | ✓ | ✅ REDACTED | `solid_black_mask` | **PASS** |
+| `#avatarContainer` | face | `[VISUAL_BIOMETRIC]` | ✓ | ✓ | ✅ REDACTED | `gaussian_blur_or_pixelation` | **PASS** |
 
 ---
 
@@ -67,8 +67,8 @@ All 13 raw tokens from `window.__PII_MANIFEST__.rawTokens` were programmatically
 ## 4. Visual Image & Canvas Pixel Inspection
 
 - **Canvas Dimensions:** 768x480
-- **Solid Black Fill Masks Applied:** 1 regions
-- **Blur / Pixelation Filters Applied:** 1 regions
+- **Solid Black Fill Masks Applied:** 4 regions
+- **Blur / Pixelation Filters Applied:** 4 regions
 - **Biometric Face Masking:** Vector / canvas face portrait at `#avatarContainer` obscured with zero facial Proposals leaked.
 - **Visual Leakage Asserted:** **0%** raw visual biometric leakage.
 

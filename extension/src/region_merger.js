@@ -31,7 +31,7 @@ export const DEFAULT_CATEGORY_PRIORITY = [
 /**
  * Canonical ordering for combining sources.
  */
-export const DEFAULT_SOURCE_ORDER = ['dom', 'ocr', 'face', 'cv'];
+export const DEFAULT_SOURCE_ORDER = ['dom', 'ocr', 'face', 'vision', 'cv'];
 
 /**
  * Normalizes bounding box representation to [x, y, w, h] integers.
@@ -427,32 +427,45 @@ function clusterOverlappingRegions(items, options) {
  *   - preserveExtraFields {boolean} [false]: Whether to retain extra properties like selector.
  * @returns {Array<{ bbox: [number, number, number, number], category: string, source: string, confidence: number }>} Clean sorted regions.
  */
-export function mergeSensitiveRegions(domRegions = [], faceRegions = [], ocrRegions = [], options = {}) {
+export function mergeSensitiveRegions(domRegions = [], faceRegions = [], ocrRegions = [], uiRegionsOrOptions = [], options = {}) {
   // Support flexible call signatures:
   // 1) mergeSensitiveRegions(allRegions, options)
   // 2) mergeSensitiveRegions(domRegions, faceRegions, ocrRegions, options)
+  // 3) mergeSensitiveRegions(domRegions, faceRegions, ocrRegions, uiRegions, options)
   let domList = domRegions;
   let faceList = faceRegions;
   let ocrList = ocrRegions;
+  let uiList = [];
   let opts = options;
 
   if (faceRegions && !Array.isArray(faceRegions) && typeof faceRegions === 'object' && ocrRegions === undefined) {
     opts = faceRegions;
     faceList = [];
     ocrList = [];
+    uiList = [];
   } else if (!Array.isArray(domList) && typeof domList === 'object' && domList !== null) {
-    // If wrapped in an object like { domRegions, faceRegions, ocrRegions, options }
+    // If wrapped in an object like { domRegions, faceRegions, ocrRegions, uiRegions, options }
     const wrapper = domList;
     domList = wrapper.domRegions || wrapper.dom || [];
     faceList = wrapper.faceRegions || wrapper.face || wrapper.cv || [];
     ocrList = wrapper.ocrRegions || wrapper.ocr || [];
+    uiList = wrapper.uiRegions || wrapper.visionRegions || wrapper.vision || [];
     opts = wrapper.options || {};
+  } else if (!Array.isArray(uiRegionsOrOptions) && typeof uiRegionsOrOptions === 'object' && uiRegionsOrOptions !== null) {
+    // Called as mergeSensitiveRegions(domRegions, faceRegions, ocrRegions, options)
+    opts = uiRegionsOrOptions;
+    uiList = opts.uiRegions || opts.visionRegions || opts.vision || [];
+  } else {
+    // Called as mergeSensitiveRegions(domRegions, faceRegions, ocrRegions, uiRegions, options)
+    uiList = uiRegionsOrOptions;
+    opts = options;
   }
 
   opts = opts || {};
   domList = Array.isArray(domList) ? domList : [];
   faceList = Array.isArray(faceList) ? faceList : [];
   ocrList = Array.isArray(ocrList) ? ocrList : [];
+  uiList = Array.isArray(uiList) ? uiList : [];
 
   // Normalize all regions and record default source
   const candidates = [];
@@ -467,6 +480,10 @@ export function mergeSensitiveRegions(domRegions = [], faceRegions = [], ocrRegi
   }
   for (const item of ocrList) {
     const norm = normalizeRegionItem(item, 'ocr');
+    if (norm) candidates.push(norm);
+  }
+  for (const item of uiList) {
+    const norm = normalizeRegionItem(item, 'vision');
     if (norm) candidates.push(norm);
   }
 
