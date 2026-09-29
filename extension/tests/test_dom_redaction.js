@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import {
   redactDomSkeleton,
   redactTextContent,
+  redactUrlSlug,
   getRedactionToken,
   checkBBoxOverlap,
   normalizeBBox,
@@ -533,4 +534,61 @@ test('DOM Redaction: Custom token map option', () => {
   });
 
   assert.equal(sanitized.value, '[CUSTOM_PW]');
+});
+
+test('DOM Redaction: URL slug-only sanitization preserves URL hierarchy and query parameters', () => {
+  assert.equal(
+    redactUrlSlug('https://example.com/in/daksh-shah'),
+    'https://example.com/in/[REDACTED_NAME]'
+  );
+  assert.equal(
+    redactUrlSlug('https://example.com/in/daksh-shah/details'),
+    'https://example.com/in/[REDACTED_NAME]/details'
+  );
+  assert.equal(
+    redactUrlSlug('https://example.com/profile?user=daksh'),
+    'https://example.com/profile?user=[REDACTED_NAME]'
+  );
+  assert.equal(
+    redactUrlSlug('https://example.org/~daksh/cv.pdf'),
+    'https://example.org/~[REDACTED_NAME]/cv.pdf'
+  );
+  assert.equal(
+    redactUrlSlug('https://linkedin.com/in/daksh-shah?trk=profile', ['Daksh Shah']),
+    'https://linkedin.com/in/[REDACTED_NAME]?trk=profile'
+  );
+  assert.equal(
+    redactUrlSlug('https://company.org/members/daksh_shah/profile', ['Daksh Shah']),
+    'https://company.org/members/[REDACTED_NAME]/profile'
+  );
+});
+
+test('DOM Redaction: Full text name substitution preserves surrounding copy', () => {
+  const text = 'Profile viewed by Daksh Shah and 15 others recently.';
+  const redacted = redactTextContent(text, { names: ['Daksh Shah'] });
+  assert.equal(redacted, `Profile viewed by ${REDACTION_TOKENS.NAME} and 15 others recently.`);
+});
+
+test('DOM Redaction: Sanitizes node href and src attributes', () => {
+  const tree = {
+    tag: 'div',
+    children: [
+      {
+        tag: 'a',
+        href: 'https://linkedin.com/in/daksh-shah',
+        text: 'View Daksh Shah Profile',
+        selector: '#link-profile'
+      },
+      {
+        tag: 'img',
+        src: 'https://media.licdn.com/dms/image/users/daksh-shah/avatar.jpg',
+        selector: '#avatar-img'
+      }
+    ]
+  };
+
+  const sanitized = redactDomSkeleton(tree, [], { names: ['Daksh Shah'] });
+  assert.equal(sanitized.children[0].href, 'https://linkedin.com/in/[REDACTED_NAME]');
+  assert.equal(sanitized.children[0].text, `View ${REDACTION_TOKENS.NAME} Profile`);
+  assert.equal(sanitized.children[1].src, 'https://media.licdn.com/dms/image/users/[REDACTED_NAME]/avatar.jpg');
 });

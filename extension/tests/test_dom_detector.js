@@ -17,6 +17,8 @@ import {
   getSelectorForNode,
   findSensitiveKeyword,
   mapKeywordToCategory,
+  extractSemanticIdentities,
+  correlateFaceWithHeadings,
   SENSITIVE_CATEGORIES,
   SENSITIVE_DOM_REGEX,
   AUTOCOMPLETE_PATTERNS
@@ -513,4 +515,81 @@ test('DOM Detector: UI cards, card titles, and headings are NEVER flagged as sen
   assert.equal(detections[0].category, 'card');
   assert.equal(detections[1].selector, '#cc-input');
   assert.equal(detections[1].category, 'card');
+});
+
+test('DOM Detector: W3C autocomplete name inputs (name, given-name, family-name)', () => {
+  const nameInputs = [
+    { tag: 'input', autocomplete: 'name', selector: '#full-name', bbox: [10, 10, 200, 30] },
+    { tag: 'input', autocomplete: 'given-name', selector: '#first-name', bbox: [10, 50, 200, 30] },
+    { tag: 'input', autocomplete: 'family-name', selector: '#last-name', bbox: [10, 90, 200, 30] }
+  ];
+
+  const detections = detectSensitiveDomElements(nameInputs);
+  assert.equal(detections.length, 3);
+  assert.equal(detections[0].category, 'name');
+  assert.equal(detections[1].category, 'name');
+  assert.equal(detections[2].category, 'name');
+});
+
+test('DOM Detector: JSON-LD Schema.org Person extraction across mock documents', () => {
+  const mockSkeleton = {
+    tag: 'body',
+    metadata: {
+      ldJson: [
+        {
+          '@context': 'https://schema.org',
+          '@type': 'Person',
+          name: 'Daksh Shah',
+          alternateName: 'daksh-shah'
+        }
+      ]
+    },
+    children: [
+      { tag: 'h1', text: 'Daksh Shah', selector: '#profile-name', bbox: [50, 50, 200, 40] }
+    ]
+  };
+
+  const identities = extractSemanticIdentities(mockSkeleton);
+  assert(identities.includes('Daksh Shah'));
+
+  const detections = detectSensitiveDomElements(mockSkeleton);
+  assert.equal(detections.length, 1);
+  assert.equal(detections[0].category, 'name');
+  assert.equal(detections[0].selector, '#profile-name');
+});
+
+test('DOM Detector: Microformats (rel="author", class="p-name", itemprop="name")', () => {
+  const mockDoc = {
+    tag: 'main',
+    children: [
+      { tag: 'a', rel: 'author', text: 'Ada Lovelace', selector: '#author-link', bbox: [10, 10, 150, 25] },
+      { tag: 'span', className: 'p-name', text: 'Grace Hopper', selector: '.p-name', bbox: [10, 40, 150, 25] }
+    ]
+  };
+
+  const identities = extractSemanticIdentities(mockDoc);
+  assert(identities.includes('Ada Lovelace'));
+  assert(identities.includes('Grace Hopper'));
+});
+
+test('DOM Detector: Face-proximity heading correlation', () => {
+  const faceRegions = [
+    { bbox: [100, 100, 80, 80], category: 'face' }
+  ];
+
+  const domSkeleton = {
+    tag: 'body',
+    children: [
+      // Close heading (adjacent within 120px)
+      { tag: 'h1', text: 'Alan Turing', selector: '#profile-header', bbox: [200, 110, 220, 40] },
+      // Far heading (outside proximity)
+      { tag: 'h2', text: 'John von Neumann', selector: '#footer-header', bbox: [800, 800, 220, 40] }
+    ]
+  };
+
+  const detections = correlateFaceWithHeadings(faceRegions, domSkeleton, { maxFaceDistance: 150 });
+  assert.equal(detections.length, 1);
+  assert.equal(detections[0].text, 'Alan Turing');
+  assert.equal(detections[0].category, 'name');
+  assert.equal(detections[0].selector, '#profile-header');
 });

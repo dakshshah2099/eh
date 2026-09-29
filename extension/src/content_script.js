@@ -409,13 +409,38 @@ function extractDomSkeleton(root = (typeof document !== 'undefined' ? document.b
       autocomplete: el.getAttribute ? (el.getAttribute('autocomplete') || (el.autocomplete || null)) : null,
       placeholder: el.getAttribute ? (el.getAttribute('placeholder') || null) : null,
       value: (tag === 'input' || tag === 'textarea') ? (el.value || null) : null,
+      href: (tag === 'a' || tag === 'link') && el.getAttribute ? (el.getAttribute('href') || null) : null,
+      src: (tag === 'img' || tag === 'iframe') && el.getAttribute ? (el.getAttribute('src') || null) : null,
       dataPiiType: el.getAttribute ? (el.getAttribute('data-pii-type') || el.getAttribute('data-pii') || null) : null,
       interactive,
       children
     };
   }
 
-  return traverse(root);
+  const tree = traverse(root);
+  if (!tree) return null;
+
+  // Collect page-level metadata if document is available
+  if (typeof document !== 'undefined') {
+    const ldJson = [];
+    const ldScripts = document.querySelectorAll ? document.querySelectorAll('script[type="application/ld+json"]') : [];
+    for (const s of ldScripts) {
+      try {
+        const parsed = JSON.parse(s.textContent || '');
+        if (Array.isArray(parsed)) ldJson.push(...parsed);
+        else if (parsed) ldJson.push(parsed);
+      } catch (_) {}
+    }
+
+    tree.metadata = {
+      title: document.title || '',
+      ogTitle: document.querySelector ? document.querySelector('meta[property="og:title"]')?.getAttribute('content') : null,
+      author: document.querySelector ? document.querySelector('meta[name="author"]')?.getAttribute('content') : null,
+      ldJson
+    };
+  }
+
+  return tree;
 }
 
 /**

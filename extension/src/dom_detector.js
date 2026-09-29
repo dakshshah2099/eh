@@ -52,12 +52,226 @@ export const NON_SENSITIVE_STRUCTURAL_TAGS = new Set([
  * - cc-*: credit card attributes (cc-number, cc-exp, cc-csc, cc-type, etc.)
  * - email: email address
  * - tel: telephone number and components
+ * - name: personal names and components (W3C standard)
  */
 export const AUTOCOMPLETE_PATTERNS = {
   CARD: /\bcc-[-a-z0-9]+/i,
   EMAIL: /\bemail\b/i,
-  TEL: /\btel(?:-[-a-z0-9]+)?\b/i
+  TEL: /\btel(?:-[-a-z0-9]+)?\b/i,
+  NAME: /\b(?:name|given-name|family-name|additional-name|nickname)\b/i
 };
+
+/**
+ * Regex patterns for standard personal name form inputs.
+ */
+export const FORM_NAME_FIELD_REGEX = /^(?:first[_-]?name|last[_-]?name|full[_-]?name|user[_-]?name|nickname|sur[_-]?name|family[_-]?name|given[_-]?name)$/i;
+export const FORM_NAME_CONTAINS_REGEX = /(?:first[-_]?name|last[-_]?name|full[-_]?name)/i;
+
+/**
+ * Common non-personal UI terms to reject when extracting names from metadata/headings.
+ */
+export const GENERIC_UI_WORDS = new Set([
+  'login', 'log in', 'signin', 'sign in', 'signup', 'sign up', 'register',
+  'home', 'homepage', 'dashboard', 'settings', 'profile', 'user profile',
+  'welcome', 'overview', 'search', 'notifications', 'messages', 'help',
+  'privacy', 'terms', 'privacy policy', 'terms of service', 'about', 'contact',
+  'cart', 'checkout', 'billing', 'shipping', 'order', 'feed', 'timeline'
+]);
+
+/**
+ * Helper to check if a string looks like a legitimate personal name.
+ * 2–4 capitalized words, 3 to 40 characters, not matching generic UI labels.
+ *
+ * @param {string} str
+ * @returns {boolean}
+ */
+export function isValidPersonalName(str) {
+  if (!str || typeof str !== 'string') return false;
+  const trimmed = str.trim();
+  if (trimmed.length < 3 || trimmed.length > 40) return false;
+  if (GENERIC_UI_WORDS.has(trimmed.toLowerCase())) return false;
+
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 4) return false;
+
+  for (const w of words) {
+    if (!/^[A-Za-zÀ-ÖØ-öø-ÿ'. -]+$/.test(w)) return false;
+    const firstChar = w[0];
+    if (firstChar === firstChar.toLowerCase() && !['de', 'van', 'von', 'del', 'der', 'la', 'le', 'di'].includes(w.toLowerCase())) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Extracts personal identities from page-level semantic standards:
+ * - JSON-LD Schema.org Person objects
+ * - OpenGraph & standard meta tags (og:title, author)
+ * - Microformats (rel="author", p-name, h-card, itemprop="name")
+ *
+ * @param {Object|Array} domSkeleton - Extracted DOM skeleton
+ * @returns {string[]} Array of unique personal names
+ */
+export function extractSemanticIdentities(domSkeleton) {
+  if (!domSkeleton) return [];
+
+  const foundNames = new Set();
+
+  function addCandidate(raw) {
+    if (!raw || typeof raw !== 'string') return;
+    const clean = raw.trim();
+    if (isValidPersonalName(clean)) {
+      foundNames.add(clean);
+    }
+  }
+
+  // 1. Check page-level metadata if present
+  const metadata = domSkeleton?.metadata || domSkeleton?.skeleton?.metadata || {};
+
+  // 1a. JSON-LD Schema.org objects
+  const ldJson = metadata.ldJson || [];
+  function inspectLdNode(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const item of node) inspectLdNode(item);
+      return;
+    }
+
+    const type = node['@type'];
+    const isPerson = type === 'Person' || (Array.isArray(type) && type.includes('Person'));
+    if (isPerson) {
+      if (typeof node.name === 'string') addCandidate(node.name);
+      if (typeof node.alternateName === 'string') addCandidate(node.alternateName);
+      if (typeof node.givenName === 'string' && typeof node.familyName === 'string') {
+        addCandidate(`${node.givenName} ${node.familyName}`);
+      }
+    }
+
+    if (Array.isArray(node['@graph'])) {
+      for (const item of node['@graph']) inspectLdNode(item);
+    }
+    if (node.author) inspectLdNode(node.author);
+  }
+
+  inspectLdNode(ldJson);
+
+  // 1b. og:title and document title (strip trailing site branding)
+  const titles = [metadata.ogTitle, metadata.title].filter(Boolean);
+  for (const t of titles) {
+    const candidate = t.split(/[|•–—\/-]/)[0]?.trim();
+    if (candidate) addCandidate(candidate);
+  }
+
+  // 1c. Author meta tag
+  if (metadata.author) {
+    addCandidate(metadata.author);
+  }
+
+  // 2. Traverse DOM skeleton for Microformats and semantic author attributes
+  function traverseDom(node) {
+    if (!node || typeof node !== 'object') return;
+
+    if (node.tag === 'script' && (node.type === 'application/ld+json' || node.id === 'ld-json')) {
+      try {
+        const parsed = JSON.parse(node.text || node.textContent || '{}');
+        inspectLdNode(parsed);
+      } catch (_) {}
+    }
+
+    const rel = String(node.rel || (node.getAttribute ? node.getAttribute('rel') : '') || '').toLowerCase();
+    const className = String(node.className || node.class || '').toLowerCase();
+    const itemprop = String(node.itemprop || (node.getAttribute ? node.getAttribute('itemprop') : '') || '').toLowerCase();
+    const tag = String(node.tag || node.tagName || '').toLowerCase();
+
+    const isAuthorRel = rel.includes('author');
+    const isPName = className.includes('p-name') || className.includes('h-card');
+    const isItempropName = itemprop === 'name';
+    const isAddressTag = tag === 'address';
+
+    if (isAuthorRel || isPName || isItempropName || isAddressTag) {
+      const nodeText = (node.text || node.textContent || '').trim();
+      if (nodeText) addCandidate(nodeText);
+    }
+
+    const children = node.children || node.elements || [];
+    if (Array.isArray(children)) {
+      for (const child of children) traverseDom(child);
+    }
+  }
+
+  traverseDom(domSkeleton);
+
+  return Array.from(foundNames);
+}
+
+/**
+ * Correlates detected face/avatar regions with nearby heading elements (h1, h2, h3).
+ *
+ * @param {Array<Object>} faceRegions - Sensitive regions with category 'face'
+ * @param {Object|Array} domSkeleton - DOM skeleton
+ * @param {Object} [options={}]
+ * @returns {Array<Object>} Sensitive regions for face-adjacent headings
+ */
+export function correlateFaceWithHeadings(faceRegions = [], domSkeleton, options = {}) {
+  if (!Array.isArray(faceRegions) || faceRegions.length === 0 || !domSkeleton) {
+    return [];
+  }
+
+  const results = [];
+  const maxDistance = options.maxFaceDistance ?? 160;
+
+  const headings = [];
+  function collectHeadings(node) {
+    if (!node || typeof node !== 'object') return;
+    const tag = String(node.tag || node.tagName || '').toLowerCase();
+    const role = String(node.role || '').toLowerCase();
+    if (['h1', 'h2', 'h3'].includes(tag) || role === 'heading') {
+      const text = (node.text || node.textContent || '').trim();
+      const bbox = normalizeBBox(node.bbox, node);
+      if (text && bbox[2] > 0 && bbox[3] > 0) {
+        headings.push({ node, text, bbox, tag });
+      }
+    }
+    const children = node.children || node.elements || [];
+    if (Array.isArray(children)) {
+      for (const child of children) collectHeadings(child);
+    }
+  }
+  collectHeadings(domSkeleton);
+
+  for (const face of faceRegions) {
+    if (!face || !face.bbox) continue;
+    const [fx, fy, fw, fh] = normalizeBBox(face.bbox);
+    const faceCenterX = fx + fw / 2;
+    const faceCenterY = fy + fh / 2;
+
+    for (const h of headings) {
+      const [hx, hy, hw, hh] = h.bbox;
+
+      // Minimum edge-to-edge gap between face box and heading box
+      const gapX = Math.max(0, Math.max(fx - (hx + hw), hx - (fx + fw)));
+      const gapY = Math.max(0, Math.max(fy - (hy + hh), hy - (fy + fh)));
+      const distance = Math.sqrt(gapX * gapX + gapY * gapY);
+
+      if (distance <= maxDistance) {
+        if (isValidPersonalName(h.text)) {
+          results.push({
+            bbox: h.bbox,
+            category: 'name',
+            source: 'dom+face',
+            confidence: 0.95,
+            selector: getSelectorForNode(h.node),
+            text: h.text
+          });
+        }
+      }
+    }
+  }
+
+  return results;
+}
 
 /**
  * Normalizes bounding box into [x, y, w, h] array.
@@ -403,6 +617,12 @@ export function evaluateElementSensitivity(node, options = {}) {
         rule: 'autocomplete_tel'
       };
     }
+    if (AUTOCOMPLETE_PATTERNS.NAME.test(autocomplete)) {
+      return {
+        category: 'name',
+        rule: 'autocomplete_name'
+      };
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -420,6 +640,24 @@ export function evaluateElementSensitivity(node, options = {}) {
       category: options.telCategory || SENSITIVE_CATEGORIES.PHONE,
       rule: 'type_tel'
     };
+  }
+
+  // --------------------------------------------------------------------------
+  // Rule 3.5: Form inputs for personal names (when enabled via options)
+  // --------------------------------------------------------------------------
+  if (options.detectFormNames === true && (tag === 'input' || tag === 'textarea')) {
+    if (FORM_NAME_FIELD_REGEX.test(name) || FORM_NAME_FIELD_REGEX.test(id)) {
+      return {
+        category: 'name',
+        rule: 'form_name_input'
+      };
+    }
+    if (FORM_NAME_CONTAINS_REGEX.test(placeholder) || FORM_NAME_CONTAINS_REGEX.test(ariaLabel)) {
+      return {
+        category: 'name',
+        rule: 'form_name_placeholder'
+      };
+    }
   }
 
   if (type === 'number') {
@@ -536,6 +774,10 @@ export function detectSensitiveDomElements(domSkeleton, options = {}) {
   const visitedSelectors = new Set();
   const deduplicate = options.deduplicate !== false;
 
+  // Extract semantic identities (JSON-LD, og:title, author, microformats)
+  const semanticNames = [...(options.names || extractSemanticIdentities(domSkeleton))];
+  const semanticNameSet = new Set(semanticNames.map(n => n.toLowerCase().trim()));
+
   /**
    * Recursive collector for nodes.
    *
@@ -561,19 +803,34 @@ export function detectSensitiveDomElements(domSkeleton, options = {}) {
 
     // Evaluate current node
     const detection = evaluateElementSensitivity(node, options);
-    if (detection) {
+    let category = detection?.category || null;
+
+    // Check if node text matches any extracted semantic name
+    if (!category && semanticNameSet.size > 0) {
+      const nodeText = String(node.text || node.textContent || '').trim();
+      if (nodeText && nodeText.length <= 50 && semanticNameSet.has(nodeText.toLowerCase())) {
+        category = 'name';
+      }
+    }
+
+    if (category) {
       const selector = getSelectorForNode(node);
       const bbox = normalizeBBox(node.bbox, node);
 
       if (!deduplicate || !visitedSelectors.has(selector)) {
         visitedSelectors.add(selector);
-        results.push({
+        const item = {
           bbox,
-          category: detection.category,
+          category,
           source: 'dom',
           confidence: 1.0,
           selector
-        });
+        };
+        const textVal = node.text || node.textContent || node.value;
+        if (typeof textVal === 'string' && textVal.trim()) {
+          item.text = textVal.trim();
+        }
+        results.push(item);
       }
     }
 
@@ -593,6 +850,22 @@ export function detectSensitiveDomElements(domSkeleton, options = {}) {
     }
   } else {
     inspectNode(domSkeleton);
+  }
+
+  // Correlate face regions if provided
+  if (Array.isArray(options.faceRegions) && options.faceRegions.length > 0) {
+    const faceCorrelations = correlateFaceWithHeadings(options.faceRegions, domSkeleton, options);
+    for (const item of faceCorrelations) {
+      if (!deduplicate || !visitedSelectors.has(item.selector)) {
+        visitedSelectors.add(item.selector);
+        results.push(item);
+        if (item.text) semanticNames.push(item.text);
+      }
+    }
+  }
+
+  if (typeof options.onExtractedNames === 'function') {
+    options.onExtractedNames(Array.from(new Set(semanticNames)));
   }
 
   return results;

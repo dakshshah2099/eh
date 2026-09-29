@@ -115,7 +115,7 @@ function createMockCanvas(width, height, options = {}) {
 
       // Parse fillStyle hex or color
       let r = 0, g = 0, b = 0, a = 255;
-      if (this.fillStyle === '#000000' || this.fillStyle === 'black') {
+      if (this.fillStyle === '#000000' || this.fillStyle === 'black' || (typeof this.fillStyle === 'string' && this.fillStyle.startsWith('rgba(0, 0, 0'))) {
         r = 0; g = 0; b = 0; a = 255;
       } else if (this.fillStyle === '#FFFFFF' || this.fillStyle === 'white') {
         r = 255; g = 255; b = 255; a = 255;
@@ -236,7 +236,7 @@ test('Image Redaction: normalizeBBox handles all bbox formats and clamping', () 
   assert.equal(normalizeBBox([150, 150, 10, 10], 100, 100), null);
 });
 
-test('Image Redaction: solid black box obscuration for passwords, pins, otps', () => {
+test('Image Redaction: solid black box obscuration when maskType is solid', () => {
   const { canvas, pixelBuffer } = createMockCanvas(100, 100);
 
   // Set distinct colored pixels initially
@@ -253,7 +253,7 @@ test('Image Redaction: solid black box obscuration for passwords, pins, otps', (
     { bbox: [10, 50, 25, 15], category: 'otp' }
   ];
 
-  const returnedCanvas = redactCanvas(canvas, regions);
+  const returnedCanvas = redactCanvas(canvas, regions, { maskType: 'solid', showLabels: false });
   assert.equal(returnedCanvas, canvas);
 
   // 1. Verify password region is completely solid black [0, 0, 0, 255]
@@ -292,6 +292,25 @@ test('Image Redaction: solid black box obscuration for passwords, pins, otps', (
   assert.equal(pixelBuffer[outsideIdx], 180);
   assert.equal(pixelBuffer[outsideIdx + 1], 200);
   assert.equal(pixelBuffer[outsideIdx + 2], 220);
+});
+
+test('Image Redaction: Gaussian mosaic applies by default with overlay badges for all categories', () => {
+  const { canvas, ctx } = createMockCanvas(120, 120);
+
+  const regions = [
+    { bbox: [10, 10, 40, 20], category: 'password' },
+    { bbox: [60, 10, 40, 20], category: 'card' },
+    { bbox: [10, 50, 40, 20], category: 'name' },
+    { bbox: [60, 50, 40, 20], category: 'face' }
+  ];
+
+  redactCanvas(canvas, regions);
+
+  assert.equal(ctx.labelsDrawn.length, 4);
+  assert.equal(ctx.labelsDrawn[0].text, '[PASSWORD]');
+  assert.equal(ctx.labelsDrawn[1].text, '[CREDIT CARD]');
+  assert.equal(ctx.labelsDrawn[2].text, '[NAME]');
+  assert.equal(ctx.labelsDrawn[3].text, '[FACE]');
 });
 
 test('Image Redaction: solid black box supports optional labels', () => {
@@ -404,10 +423,11 @@ test('Image Redaction: separable box blur filter smooths region', () => {
   pixelBuffer[targetIdx + 1] = 0;
   pixelBuffer[targetIdx + 2] = 0;
 
-  // Apply box blur on region [10, 10, 30, 30]
+  // Apply box blur on region [10, 10, 30, 30] without label badge
   redactCanvas(canvas, [{ bbox: [10, 10, 30, 30], category: 'ssn' }], {
     blurStyle: 'box_blur',
-    blurRadius: 5
+    blurRadius: 5,
+    showLabels: false
   });
 
   // The single red pixel intensity should be spread over neighboring pixels
@@ -426,7 +446,7 @@ test('Image Redaction: supports passing CanvasRenderingContext2D directly', () =
   const returned = redactCanvas(ctx, regions);
   assert(returned);
 
-  // Region should be solid black
+  // Region should be redacted
   assert.equal(pixelBuffer[(15 * 60 + 15) * 4], 0);
   assert.equal(pixelBuffer[(15 * 60 + 15) * 4 + 1], 0);
   assert.equal(pixelBuffer[(15 * 60 + 15) * 4 + 2], 0);
@@ -451,33 +471,36 @@ test('Image Redaction: supports OffscreenCanvas without toDataURL', async () => 
 });
 
 test('Image Redaction: returnType options (canvas, dataUrl, base64, both)', async () => {
-  const { canvas } = createMockCanvas(40, 40);
-
   const regions = [{ bbox: [0, 0, 20, 20], category: 'otp' }];
 
   // 1. returnType: 'canvas' (default)
-  const resCanvas = redactCanvas(canvas, regions);
-  assert.equal(resCanvas, canvas);
+  const c1 = createMockCanvas(40, 40).canvas;
+  const resCanvas = redactCanvas(c1, regions);
+  assert.equal(resCanvas, c1);
 
   // 2. returnType: 'dataUrl'
-  const resDataUrl = await redactCanvas(canvas, regions, { returnType: 'dataUrl' });
+  const c2 = createMockCanvas(40, 40).canvas;
+  const resDataUrl = await redactCanvas(c2, regions, { returnType: 'dataUrl' });
   assert(typeof resDataUrl === 'string');
   assert(resDataUrl.startsWith('data:image/'));
 
   // 3. returnType: 'base64'
-  const resBase64 = await redactCanvas(canvas, regions, { returnType: 'base64' });
+  const c3 = createMockCanvas(40, 40).canvas;
+  const resBase64 = await redactCanvas(c3, regions, { returnType: 'base64' });
   assert(typeof resBase64 === 'string');
   assert(!resBase64.startsWith('data:'));
   assert(resDataUrl.endsWith(resBase64));
 
   // 4. returnType: 'both'
-  const resBoth = await redactCanvas(canvas, regions, { returnType: 'both' });
-  assert.equal(resBoth.canvas, canvas);
+  const c4 = createMockCanvas(40, 40).canvas;
+  const resBoth = await redactCanvas(c4, regions, { returnType: 'both' });
+  assert.equal(resBoth.canvas, c4);
   assert(resBoth.dataUrl.startsWith('data:image/'));
   assert(typeof resBoth.base64 === 'string');
 
   // 5. redactCanvasToDataUrl helper
-  const helperUrl = await redactCanvasToDataUrl(canvas, regions);
+  const c5 = createMockCanvas(40, 40).canvas;
+  const helperUrl = await redactCanvasToDataUrl(c5, regions);
   assert(helperUrl.startsWith('data:image/'));
 });
 

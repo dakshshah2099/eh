@@ -224,6 +224,73 @@ function deepClone(value) {
 }
 
 /**
+ * Canonical URL path prefixes that precede a personal/user identifier slug.
+ */
+export const USER_PATH_PREFIX_REGEX = /(\/(?:in|user|users|profile|u|author|c|member|people)\/)([a-zA-Z0-9._-]+)/gi;
+
+/**
+ * Tilde user home directories in URLs (e.g. /~daksh or /~daksh/).
+ */
+export const TILDE_PATH_REGEX = /(\/~)([a-zA-Z0-9._-]+)/gi;
+
+/**
+ * Query parameter keys that identify personal users (e.g. ?user=daksh or &author=daksh).
+ */
+export const USER_QUERY_PARAM_REGEX = /([?&](?:u|user|username|name|profile|author)=)([^&#]+)/gi;
+
+/**
+ * Sanitizes a URL string by redacting ONLY user identifier slugs while strictly
+ * preserving URL hierarchy, protocol, hostname, surrounding path segments, and other query params.
+ *
+ * @param {string} urlStr - Raw URL string
+ * @param {string[]} [explicitNames=[]] - Discovered candidate personal names
+ * @returns {string} Redacted URL string
+ */
+export function redactUrlSlug(urlStr, explicitNames = []) {
+  if (!urlStr || typeof urlStr !== 'string') return urlStr;
+
+  let redacted = urlStr;
+
+  // 1. Redact canonical user path segments: /in/username -> /in/[REDACTED_NAME]
+  redacted = redacted.replace(USER_PATH_PREFIX_REGEX, '$1[REDACTED_NAME]');
+
+  // 2. Redact tilde personal directory slugs: /~username -> /~[REDACTED_NAME]
+  redacted = redacted.replace(TILDE_PATH_REGEX, '$1[REDACTED_NAME]');
+
+  // 3. Redact identity query parameter values: ?user=username -> ?user=[REDACTED_NAME]
+  redacted = redacted.replace(USER_QUERY_PARAM_REGEX, '$1[REDACTED_NAME]');
+
+  // 4. Redact explicit name slugs if matching segments in URL path
+  if (Array.isArray(explicitNames) && explicitNames.length > 0) {
+    for (const name of explicitNames) {
+      if (!name || typeof name !== 'string') continue;
+      const cleanName = name.trim();
+      if (cleanName.length < 3) continue;
+
+      const lower = cleanName.toLowerCase();
+      const slugDash = lower.replace(/\s+/g, '-');
+      const slugUnderscore = lower.replace(/\s+/g, '_');
+      const slugCompact = lower.replace(/[^a-z0-9]/g, '');
+
+      const slugsToMatch = new Set([slugDash, slugUnderscore, slugCompact]);
+      const parts = cleanName.split(/\s+/);
+      if (parts.length > 1 && parts[0].length >= 4) {
+        slugsToMatch.add(parts[0].toLowerCase());
+      }
+
+      for (const slug of slugsToMatch) {
+        if (!slug || slug.length < 3) continue;
+        const escaped = slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const segRegex = new RegExp(`(/)${escaped}(/|\\?|#|$)`, 'gi');
+        redacted = redacted.replace(segRegex, '$1[REDACTED_NAME]$2');
+      }
+    }
+  }
+
+  return redacted;
+}
+
+/**
  * Scans a text string and replaces any occurrences of raw PII with typed tokens.
  *
  * @param {string} text - Raw input string
@@ -244,16 +311,29 @@ export function redactTextContent(text, options = {}) {
   let redacted = text;
 
   // 1. Explicit text items from sensitive regions (e.g. OCR text, user names)
+  const explicitItems = [];
   if (Array.isArray(options.explicitTexts)) {
     for (const item of options.explicitTexts) {
-      if (item && item.text && typeof item.text === 'string' && item.text.trim()) {
-        const token = getRedactionToken(item.category, options);
-        // Escape special regex characters in explicit text
-        const escaped = item.text.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const re = new RegExp(`\\b${escaped}\\b`, 'gi');
-        redacted = redacted.replace(re, token);
+      if (typeof item === 'string' && item.trim()) {
+        explicitItems.push({ text: item.trim(), category: 'name' });
+      } else if (item && typeof item.text === 'string' && item.text.trim()) {
+        explicitItems.push({ text: item.text.trim(), category: item.category || 'name' });
       }
     }
+  }
+  if (Array.isArray(options.names)) {
+    for (const name of options.names) {
+      if (typeof name === 'string' && name.trim()) {
+        explicitItems.push({ text: name.trim(), category: 'name' });
+      }
+    }
+  }
+
+  for (const item of explicitItems) {
+    const token = getRedactionToken(item.category, options);
+    const escaped = item.text.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`\\b${escaped}\\b`, 'gi');
+    redacted = redacted.replace(re, token);
   }
 
   // 2. Custom patterns from options
@@ -268,15 +348,17 @@ export function redactTextContent(text, options = {}) {
 
   // 3. Standard PII patterns (card, ssn, email, phone)
   for (const { regex, token, category } of SENSITIVE_TEXT_PATTERNS) {
-    // Check if category is enabled
     if (options.disabledCategories && options.disabledCategories.includes(category)) {
       continue;
     }
     const resolvedToken = (options.tokenMap && options.tokenMap[category]) ? options.tokenMap[category] : token;
-    // Reset regex lastIndex in case it's global
     regex.lastIndex = 0;
     redacted = redacted.replace(regex, resolvedToken);
   }
+
+  // 4. Redact URL slugs embedded in text
+  const nameStrings = explicitItems.filter(i => i.category === 'name').map(i => i.text);
+  redacted = redactUrlSlug(redacted, nameStrings);
 
   return redacted;
 }
@@ -434,6 +516,18 @@ function redactSingleNode(node, regions, options) {
     }
   }
 
+  // Sanitize user identifier slugs in URL attributes (href, src)
+  const explicitNames = (options.names || []).concat(
+    (options.explicitTexts || []).map(t => (typeof t === 'string' ? t : t?.text))
+  ).filter(Boolean);
+
+  if (typeof node.href === 'string' && node.href.length > 0) {
+    node.href = redactUrlSlug(node.href, explicitNames);
+  }
+  if (typeof node.src === 'string' && node.src.length > 0) {
+    node.src = redactUrlSlug(node.src, explicitNames);
+  }
+
   // Recursively redact children
   if (Array.isArray(node.children)) {
     for (let i = 0; i < node.children.length; i++) {
@@ -490,8 +584,13 @@ export function redactDomSkeleton(domSkeleton, sensitiveRegions = [], options = 
     }
   }
 
+  const explicitNames = (options.names || []).concat(
+    (options.explicitTexts || []).map(t => (typeof t === 'string' ? t : t?.text))
+  ).filter(Boolean);
+
   const effectiveOptions = {
     ...options,
+    names: explicitNames,
     explicitTexts: [...explicitTexts, ...(options.explicitTexts || [])]
   };
 

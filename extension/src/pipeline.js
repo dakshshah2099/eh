@@ -17,7 +17,7 @@
  */
 
 import { downscaleImage, calculateTargetDimensions, blobToBase64 } from './downscale.js';
-import { detectSensitiveDomElements } from './dom_detector.js';
+import { detectSensitiveDomElements, extractSemanticIdentities, correlateFaceWithHeadings } from './dom_detector.js';
 import { detectFaces } from './face_detector.js';
 import { detectSensitiveOCRRegions } from './ocr_detector.js';
 import { mergeSensitiveRegions } from './region_merger.js';
@@ -369,8 +369,12 @@ export async function executePipeline(options = {}) {
   // =========================================================================
   const tDomDetectStart = performance.now();
   let domRegions = [];
+  const semanticNames = extractSemanticIdentities(rawDomSkeleton);
   try {
-    domRegions = detectSensitiveDomElements(rawDomSkeleton, options.domDetectorOptions || options.domOptions || {});
+    domRegions = detectSensitiveDomElements(rawDomSkeleton, {
+      names: semanticNames,
+      ...(options.domDetectorOptions || options.domOptions || {})
+    });
   } catch (err) {
     console.warn('[Pipeline] DOM sensitivity detector error:', err.message);
     domRegions = [];
@@ -436,7 +440,38 @@ export async function executePipeline(options = {}) {
   // STEP 6: Merge all sensitive regions with region_merger.js (13)
   // =========================================================================
   const tMergeStart = performance.now();
-  const mergedRegions = mergeSensitiveRegions(scaledDomRegions, faceRegions, ocrRegions, {
+
+  // Correlate detected face regions with adjacent headings in DOM skeleton
+  let faceHeadingRegions = [];
+  if (faceRegions.length > 0) {
+    const unscaledFaces = faceRegions.map(f => {
+      if (!f.bbox || scale === 1.0) return f;
+      const [x, y, w, h] = f.bbox;
+      return { ...f, bbox: [Math.round(x / scale), Math.round(y / scale), Math.round(w / scale), Math.round(h / scale)] };
+    });
+    faceHeadingRegions = correlateFaceWithHeadings(unscaledFaces, rawDomSkeleton, {
+      maxFaceDistance: 160
+    });
+  }
+
+  const scaledFaceHeadings = faceHeadingRegions.map(r => {
+    if (!r.bbox || scale === 1.0) return { ...r, originalBbox: r.bbox };
+    const [x, y, w, h] = r.bbox;
+    return {
+      ...r,
+      originalBbox: r.bbox,
+      bbox: [
+        Math.round(x * scale),
+        Math.round(y * scale),
+        Math.max(1, Math.round(w * scale)),
+        Math.max(1, Math.round(h * scale))
+      ]
+    };
+  });
+
+  const allDomRegions = [...scaledDomRegions, ...scaledFaceHeadings];
+
+  const mergedRegions = mergeSensitiveRegions(allDomRegions, faceRegions, ocrRegions, {
     ...(options.mergerOptions || {}),
     preserveExtraFields: true
   });
@@ -496,10 +531,20 @@ export async function executePipeline(options = {}) {
     return r;
   });
 
+  const allDiscoveredNames = Array.from(new Set([
+    ...semanticNames,
+    ...domRegions.filter(r => r.category === 'name' && r.text).map(r => r.text),
+    ...faceHeadingRegions.filter(r => r.text).map(r => r.text),
+    ...(options.names || [])
+  ]));
+
   const redactedDom = redactDomSkeleton(
     rawDomSkeleton,
     domRedactionRegions,
-    options.domRedactionOptions || {}
+    {
+      names: allDiscoveredNames,
+      ...(options.domRedactionOptions || {})
+    }
   );
   const dom_redact_ms = Number((performance.now() - tDomRedactStart).toFixed(3));
   console.log(`[Pipeline] Step 8 Complete: Redacted DOM skeleton text & values [${dom_redact_ms.toFixed(2)}ms]`);

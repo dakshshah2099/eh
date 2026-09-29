@@ -103,7 +103,49 @@ export function normalizeBBox(bbox, canvasWidth, canvasHeight) {
 }
 
 /**
- * Draws an optional text label inside or over a redacted region.
+ * Category to replacement badge string mapping.
+ */
+export const CATEGORY_LABEL_MAP = {
+  password: '[PASSWORD]',
+  passwd: '[PASSWORD]',
+  pwd: '[PASSWORD]',
+  passcode: '[PASSWORD]',
+  pin: '[PIN]',
+  otp: '[OTP]',
+  card: '[CREDIT CARD]',
+  credit_card: '[CREDIT CARD]',
+  creditcard: '[CREDIT CARD]',
+  ssn: '[SSN]',
+  social: '[SSN]',
+  tax: '[TAX ID]',
+  email: '[EMAIL]',
+  phone: '[PHONE]',
+  tel: '[PHONE]',
+  name: '[NAME]',
+  fullname: '[NAME]',
+  face: '[FACE]',
+  pii: '[PII]'
+};
+
+/**
+ * Resolves the appropriate replacement string label for a sensitive region.
+ *
+ * @param {string} [category]
+ * @param {object} [region={}]
+ * @param {object} [options={}]
+ * @returns {string} Label text
+ */
+export function getRedactionLabelText(category, region = {}, options = {}) {
+  if (options.labelText) return options.labelText;
+  if (region.label) return region.label;
+  const cat = String(category || region.category || '').toLowerCase().trim();
+  if (CATEGORY_LABEL_MAP[cat]) return CATEGORY_LABEL_MAP[cat];
+  if (cat) return `[${cat.toUpperCase()}]`;
+  return '[REDACTED]';
+}
+
+/**
+ * Draws an overlay replacement label badge centered over a redacted region.
  *
  * @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} ctx
  * @param {number} x
@@ -114,21 +156,40 @@ export function normalizeBBox(bbox, canvasWidth, canvasHeight) {
  * @param {object} options
  */
 export function drawRedactionLabel(ctx, x, y, w, h, region = {}, options = {}) {
-  if (w < 20 || h < 10) return;
+  if (w < 16 || h < 10) return;
 
-  const category = (region.category || 'REDACTED').toUpperCase();
-  const labelText = options.labelText || region.label || `[${category}]`;
+  const labelText = getRedactionLabelText(region.category, region, options);
 
   if (typeof ctx.save === 'function') ctx.save();
 
-  const fontSize = Math.min(13, Math.max(9, Math.floor(h * 0.4)));
+  const fontSize = Math.min(13, Math.max(9, Math.floor(Math.min(h * 0.45, 14))));
   if (ctx.font !== undefined) {
     ctx.font = options.labelFont || `bold ${fontSize}px sans-serif, monospace`;
   }
   if (ctx.textAlign !== undefined) ctx.textAlign = 'center';
   if (ctx.textBaseline !== undefined) ctx.textBaseline = 'middle';
-  ctx.fillStyle = options.labelTextColor || '#FFFFFF';
 
+  // Badge background for high legibility over blurred visuals
+  const textWidth = ctx.measureText
+    ? (ctx.measureText(labelText).width || labelText.length * fontSize * 0.6)
+    : (labelText.length * fontSize * 0.6);
+  const badgeW = Math.min(w, Math.max(18, Math.round(textWidth + 8)));
+  const badgeH = Math.min(h, Math.round(fontSize + 6));
+  const badgeX = x + Math.round((w - badgeW) / 2);
+  const badgeY = y + Math.round((h - badgeH) / 2);
+
+  if (typeof ctx.fillRect === 'function') {
+    ctx.fillStyle = options.badgeBgColor || '#000000';
+    if (typeof ctx.beginPath === 'function' && typeof ctx.roundRect === 'function') {
+      ctx.beginPath();
+      ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 3);
+      ctx.fill();
+    } else {
+      ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+    }
+  }
+
+  ctx.fillStyle = options.labelTextColor || '#FFFFFF';
   if (typeof ctx.fillText === 'function') {
     ctx.fillText(labelText, x + w / 2, y + h / 2, Math.max(10, w - 4));
   }
@@ -138,7 +199,7 @@ export function drawRedactionLabel(ctx, x, y, w, h, region = {}, options = {}) {
 
 /**
  * Draws a solid fill box over a sensitive region.
- * Used for passwords, PINs, and OTPs.
+ * Used for passwords, PINs, and OTPs when solid masking is requested.
  *
  * @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} ctx
  * @param {[number, number, number, number]} bbox - [x, y, w, h]
@@ -154,9 +215,8 @@ export function applySolidMask(ctx, bbox, options = {}, region = {}) {
   ctx.fillStyle = options.solidFillColor || '#000000';
   ctx.fillRect(x, y, w, h);
 
-  const showLabel = options.showLabels === true ||
-    region.showLabel === true ||
-    (options.showLabels !== false && options.labelText !== undefined);
+  const showLabel = options.showLabels !== false &&
+    (options.showLabels === true || region.showLabel === true || region.category || region.label || options.labelText);
 
   if (showLabel) {
     drawRedactionLabel(ctx, x, y, w, h, region, options);
@@ -473,7 +533,8 @@ export function redactCanvas(canvasOrContext, sensitiveRegions = [], options = {
     // Determine whether to use solid box or blur/pixelation
     const isSolid = options.maskType === 'solid' ||
       redactionType === 'solid' ||
-      solidCategories.has(category);
+      (options.useSolid === true && solidCategories.has(category)) ||
+      (options.useSolidCategories === true && solidCategories.has(category));
 
     if (isSolid) {
       applySolidMask(ctx, bbox, options, region);
@@ -493,6 +554,13 @@ export function redactCanvas(canvasOrContext, sensitiveRegions = [], options = {
       } else {
         // Default: Gaussian blur filter
         applyGaussianBlur(ctx, bbox, options);
+      }
+
+      // Draw overlay label badge if element was identified or requested
+      const showLabel = options.showLabels !== false &&
+        (options.showLabels === true || region.category || region.label || options.labelText);
+      if (showLabel) {
+        drawRedactionLabel(ctx, bbox[0], bbox[1], bbox[2], bbox[3], region, options);
       }
     }
   }
