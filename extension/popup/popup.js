@@ -114,7 +114,6 @@ document.addEventListener('DOMContentLoaded', () => {
           fetchStatus();
           return;
         }
-
         if (response && response.success) {
           // Confirmed by background — lock in the confirmed state without racing fetchStatus
           const running = Boolean(response.isRunning ?? isStarting);
@@ -179,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function applyProviderMeta(provider) {
     const meta = PROVIDER_META[provider] || { hint: '', needsKey: true, needsBaseUrl: false };
-    modelHint.textContent = meta.hint ? 'e.g. ' + meta.hint : '';
+    modelHint.textContent = meta.hint ? `e.g. ${meta.hint}` : '';
     apiKeyGroup.style.display = meta.needsKey ? '' : 'none';
     baseUrlGroup.style.display = meta.needsBaseUrl ? '' : 'none';
     if (meta.needsBaseUrl && DEFAULT_BASE_URLS[provider] && !baseUrlInput.value) {
@@ -192,8 +191,10 @@ document.addEventListener('DOMContentLoaded', () => {
   cloudModeToggle.addEventListener('change', () => {
     const isCloud = cloudModeToggle.checked;
     cloudSettings.classList.toggle('hidden', !isCloud);
-    llmModeLabel.textContent = isCloud ? 'Local' : 'Local';
+    llmModeLabel.textContent = isCloud ? 'Cloud' : 'Local';
+    // Save mode preference
     chrome.storage.local.set({ llmMode: isCloud ? 'cloud' : 'local' });
+    // Notify background
     chrome.runtime.sendMessage({ type: 'SET_LLM_MODE', mode: isCloud ? 'cloud' : 'local' });
   });
 
@@ -201,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleKeyBtn.addEventListener('click', () => {
       const isPassword = apiKeyInput.type === 'password';
       apiKeyInput.type = isPassword ? 'text' : 'password';
-      toggleKeyBtn.textContent = isPassword ? '\uD83D\uDE48' : '\uD83D\uDC41';
+      toggleKeyBtn.textContent = isPassword ? '🙈' : '👁';
     });
   }
 
@@ -213,16 +214,19 @@ document.addEventListener('DOMContentLoaded', () => {
         apiKey:   apiKeyInput.value.trim(),
         baseUrl:  baseUrlInput.value.trim(),
       };
+
       if (!config.model) {
         saveStatus.style.color = '#f87171';
         saveStatus.textContent = 'Model name is required';
         setTimeout(() => { saveStatus.textContent = ''; }, 2500);
         return;
       }
+
       chrome.storage.local.set({ llmConfig: config }, () => {
+        // Forward to background so it can use it immediately
         chrome.runtime.sendMessage({ type: 'SET_LLM_CONFIG', config });
         saveStatus.style.color = '#34d399';
-        saveStatus.textContent = '\u2713 Saved';
+        saveStatus.textContent = '✓ Saved';
         setTimeout(() => { saveStatus.textContent = ''; }, 2000);
       });
     });
@@ -230,9 +234,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load persisted LLM settings
   chrome.storage.local.get(['llmConfig', 'llmMode'], (data) => {
-    const isCloud = (data.llmMode || 'local') === 'cloud';
+    const mode = data.llmMode || 'local';
+    const isCloud = mode === 'cloud';
     cloudModeToggle.checked = isCloud;
     cloudSettings.classList.toggle('hidden', !isCloud);
+    llmModeLabel.textContent = isCloud ? 'Cloud' : 'Local';
+
     if (data.llmConfig) {
       const c = data.llmConfig;
       if (c.provider) providerSelect.value = c.provider;
@@ -252,10 +259,10 @@ document.addEventListener('DOMContentLoaded', () => {
     currentHighlightActive = Boolean(isActive);
     if (!highlightBtn) return;
     if (currentHighlightActive) {
-      highlightBtn.textContent = '\u2728 Clear Highlights' + (count > 0 ? ' (' + count + ')' : '');
+      highlightBtn.textContent = '✨ Clear Highlights' + (count > 0 ? ` (${count})` : '');
       highlightBtn.className = 'btn btn-warning';
     } else {
-      highlightBtn.textContent = '\uD83D\uDD0D Highlight PII Fields';
+      highlightBtn.textContent = '🔍 Highlight PII Fields';
       highlightBtn.className = 'btn btn-secondary';
     }
   }
@@ -283,17 +290,17 @@ document.addEventListener('DOMContentLoaded', () => {
           highlightBtn.disabled = false;
           if (chrome.runtime.lastError) {
             console.error('[Popup] Error toggling PII highlights:', chrome.runtime.lastError.message);
-            statusInfo.textContent = 'Highlight error: ' + chrome.runtime.lastError.message;
+            statusInfo.textContent = `Highlight error: ${chrome.runtime.lastError.message}`;
             return;
           }
           if (response && response.success) {
             updateHighlightUI(response.active, response.count);
             statusInfo.textContent = response.active
-              ? 'Highlighted ' + response.count + ' PII field(s)'
+              ? `Highlighted ${response.count} PII field(s)`
               : 'Cleared PII highlights';
           } else {
             const err = (response && response.error) || 'Failed to highlight';
-            statusInfo.textContent = 'Highlight error: ' + err;
+            statusInfo.textContent = `Highlight error: ${err}`;
           }
         });
       });
