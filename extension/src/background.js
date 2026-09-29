@@ -553,26 +553,14 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
         case 'START_LOOP':
         case 'START_AGENT_LOOP':
         case 'START_AGENT': {
-          // Guard: load latest state to prevent duplicate starts
-          const state = await ensureState();
-          if (state.isRunning) {
-            sendResponse({ success: true, isRunning: true, message: 'Agent already running' });
-            break;
-          }
           const tabId = message.tabId ?? null;
           const task = message.task || message.taskDescription || '';
           const options = message.options || message;
-          // Optimistic early state update before loop initialises
-          agentState.isRunning = true;
-          agentState.lastStartedAt = Date.now();
-          agentState.currentTabId = tabId;
-          agentState.currentTask = task;
-          await chrome.storage.local.set({ agentState });
           if (message.async) {
             startLoop(tabId, task, options).catch(err => {
               console.error('[Background] Async loop error:', err);
             });
-            sendResponse({ success: true, isRunning: true, message: 'Loop started' });
+            sendResponse({ success: true, isRunning: true, message: 'Loop started in background' });
           } else {
             const res = await startLoop(tabId, task, options);
             sendResponse(res);
@@ -736,6 +724,25 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
         case 'LOG_LATENCY_SUMMARY': {
           const summary = logLatencySummary();
           sendResponse({ success: true, summary });
+          break;
+        }
+        case 'SET_LLM_MODE': {
+          const mode = message.mode === 'cloud' ? 'cloud' : 'local';
+          await chrome.storage.local.set({ llmMode: mode });
+          console.log('[Background] LLM mode set to:', mode);
+          sendResponse({ success: true, mode });
+          break;
+        }
+        case 'GET_LLM_CONFIG': {
+          const data = await chrome.storage.local.get(['llmConfig', 'llmMode']);
+          sendResponse({ success: true, llmConfig: data.llmConfig || null, llmMode: data.llmMode || 'local' });
+          break;
+        }
+        case 'SET_LLM_CONFIG': {
+          const cfg = message.config || {};
+          await chrome.storage.local.set({ llmConfig: cfg });
+          console.log('[Background] LLM config saved:', cfg.provider, cfg.model);
+          sendResponse({ success: true });
           break;
         }
         default:
