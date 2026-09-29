@@ -41,6 +41,13 @@ export const SENSITIVE_KEYWORDS = new Set([
 ]);
 
 /**
+ * Structural, heading, and title tags that should not be classified as sensitive form fields.
+ */
+export const NON_SENSITIVE_STRUCTURAL_TAGS = new Set([
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'nav', 'footer', 'title', 'legend'
+]);
+
+/**
  * Autocomplete matching patterns:
  * - cc-*: credit card attributes (cc-number, cc-exp, cc-csc, cc-type, etc.)
  * - email: email address
@@ -436,26 +443,33 @@ export function evaluateElementSensitivity(node, options = {}) {
   }
 
   // --------------------------------------------------------------------------
-  // Rule 4: name/id/className/aria-label/placeholder regex matching:
+  // Rule 4: name/id/aria-label/placeholder regex matching:
   // ssn|social|card|cvv|cvc|otp|pan|pin|password|secret|tax
+  // (Excludes className and structural headings to prevent redacting card-titles and UI cards)
   // --------------------------------------------------------------------------
-  const attributesToTest = [
-    { name: 'name', value: name },
-    { name: 'id', value: id },
-    { name: 'className', value: className },
-    { name: 'aria-label', value: ariaLabel },
-    { name: 'placeholder', value: placeholder }
-  ];
+  if (!NON_SENSITIVE_STRUCTURAL_TAGS.has(tag)) {
+    const isContainerWithChildren = Array.isArray(node.children) && node.children.length > 0;
+    const attributesToTest = [
+      { name: 'name', value: name },
+      { name: 'aria-label', value: ariaLabel },
+      { name: 'placeholder', value: placeholder }
+    ];
 
-  for (const attr of attributesToTest) {
-    if (!attr.value) continue;
+    // Only test 'id' for non-container or interactive elements to prevent marking outer card wrappers
+    if (!isContainerWithChildren) {
+      attributesToTest.push({ name: 'id', value: id });
+    }
 
-    const keyword = findSensitiveKeyword(attr.value);
-    if (keyword) {
-      return {
-        category: mapKeywordToCategory(keyword, options),
-        rule: `regex_${attr.name}_${keyword.toLowerCase()}`
-      };
+    for (const attr of attributesToTest) {
+      if (!attr.value) continue;
+
+      const keyword = findSensitiveKeyword(attr.value);
+      if (keyword) {
+        return {
+          category: mapKeywordToCategory(keyword, options),
+          rule: `regex_${attr.name}_${keyword.toLowerCase()}`
+        };
+      }
     }
   }
 

@@ -401,11 +401,19 @@ function redactSingleNode(node, regions, options) {
   if (effectiveCategory) {
     const token = getRedactionToken(effectiveCategory, options);
 
-    // Replace all applicable text, value, and label fields with the typed token
+    const isInput = node.tag === 'input' || node.tag === 'textarea';
+
+    // Replace all applicable text, value, and label fields
     for (const field of CONTENT_FIELDS) {
       if (node[field] !== undefined && node[field] !== null) {
         if (typeof node[field] === 'string' && node[field].length > 0) {
-          node[field] = token;
+          if (matchingRegion || isInput || field === 'value') {
+            node[field] = token;
+          } else {
+            // For non-input elements without matchingRegion, redact sensitive patterns while preserving surrounding text
+            const redacted = redactTextContent(node[field], options);
+            node[field] = (redacted !== node[field]) ? redacted : token;
+          }
         } else if (typeof node[field] === 'string' && field === 'value') {
           // If value is empty string on a sensitive field (like password input), also assign token if requested or populated
           node[field] = token;
@@ -414,7 +422,7 @@ function redactSingleNode(node, regions, options) {
     }
 
     // Ensure value is set to token if input is sensitive even if value was undefined/null
-    if ((node.tag === 'input' || node.tag === 'textarea') && node.value !== undefined) {
+    if (isInput && node.value !== undefined) {
       node.value = token;
     }
   } else if (options.scanTextPatterns !== false) {

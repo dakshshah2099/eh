@@ -491,3 +491,26 @@ test('DOM Detector: Integration with extractDomSkeleton from content_script', ()
     assert(typeof d.selector === 'string');
   }
 });
+
+test('DOM Detector: UI cards, card titles, and headings are NEVER flagged as sensitive', () => {
+  const uiElements = [
+    { tag: 'div', className: 'card', selector: '.card', bbox: [0, 0, 400, 300] },
+    { tag: 'div', className: 'card-title', selector: '.card-title', text: 'Account Credentials', bbox: [10, 10, 200, 30] },
+    { tag: 'div', className: 'card-title', selector: '.card-title-2', text: 'User Identity & Profile', bbox: [10, 50, 200, 30] },
+    { tag: 'div', className: 'card-title', selector: '.card-title-3', text: 'Financial & Billing Instruments', bbox: [10, 90, 200, 30] },
+    { tag: 'h2', id: 'credit-card-header', selector: '#credit-card-header', text: 'Credit Card Payment', bbox: [10, 130, 200, 30] },
+    { tag: 'h3', className: 'card-heading', selector: '#card-heading', text: 'Payment Details', bbox: [10, 170, 200, 30] },
+    { tag: 'legend', id: 'payment-card-legend', selector: 'legend', text: 'Card Information', bbox: [10, 210, 200, 30] },
+    // Actual visual card number SHOULD still be detected via Rule 5 pattern matching
+    { tag: 'div', className: 'cc-number', selector: '#cc-num', text: '4532 0150 9823 8812', bbox: [10, 250, 200, 30] },
+    // Form input SHOULD still be detected
+    { tag: 'input', name: 'credit_card', selector: '#cc-input', type: 'text', bbox: [10, 290, 200, 30] }
+  ];
+
+  const detections = detectSensitiveDomElements(uiElements);
+  assert.equal(detections.length, 2, 'Only the visual card number and the card input should be detected');
+  assert.equal(detections[0].selector, '#cc-num');
+  assert.equal(detections[0].category, 'card');
+  assert.equal(detections[1].selector, '#cc-input');
+  assert.equal(detections[1].category, 'card');
+});
