@@ -62,10 +62,13 @@ def load_smolvlm():
 
     model = AutoModelForImageTextToText.from_pretrained(
         str(m_dir),
-        torch_dtype=dtype,
+        dtype=dtype,
         low_cpu_mem_usage=True,
         local_files_only=True,
     ).to(device)
+
+    if hasattr(model, "generation_config") and model.generation_config is not None:
+        model.generation_config.max_length = None
 
     model.eval()
     _GLOBAL_MODEL = model
