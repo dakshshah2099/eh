@@ -20,6 +20,7 @@ const PROVIDER_META = {
   xai:              { hint: 'grok-2-vision-1212', needsBaseUrl: false },
   perplexity:       { hint: 'sonar-pro, sonar', needsBaseUrl: false },
   openrouter:       { hint: 'meta-llama/llama-3.2-11b-vision-instruct:free', needsBaseUrl: false },
+  smolvlm:          { hint: 'HuggingFaceTB/SmolVLM-256M-Instruct, smolvlm', needsBaseUrl: false },
   ollama:           { hint: 'llama3.2-vision, llama3.2', needsBaseUrl: true  },
   vllm:             { hint: 'meta-llama/Llama-3.2-11B-Vision-Instruct', needsBaseUrl: true  },
   lm_studio:        { hint: 'llama-3.2-vision', needsBaseUrl: true  },

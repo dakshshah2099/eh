@@ -1055,3 +1055,36 @@ def test_plan_endpoint_renders_redacted_regions_into_vlm_prompt(mock_ollama):
     assert "plan actions that target these regions" in called_prompt
 
 
+@patch("smolvlm_local.call_smolvlm")
+@patch("smolvlm_local.is_smolvlm_ready")
+def test_smolvlm_provider_routing(mock_ready, mock_call):
+    """Verify smolvlm provider routes cleanly to call_smolvlm."""
+    mock_ready.return_value = True
+    mock_call.return_value = json.dumps({
+        "actions": [
+            {"type": "click", "target_selector": "button#submit", "reason": "Click submit via SmolVLM"}
+        ],
+        "task_complete": False,
+        "confidence": 0.95
+    })
+
+    payload = {
+        "task": "Submit form",
+        "dom_skeleton": [],
+        "image_base64": "abc",
+        "viewport": {"width": 1280, "height": 720},
+        "redaction_map": [],
+        "provider": "smolvlm"
+    }
+
+    response = client.post("/api/plan", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["task_complete"] is False
+    assert len(data["actions"]) == 1
+    assert data["actions"][0]["type"] == "click"
+    assert data["actions"][0]["target_selector"] == "button#submit"
+    mock_call.assert_called_once()
+
+
+

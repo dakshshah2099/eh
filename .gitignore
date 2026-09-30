@@ -5,3 +5,7 @@ __pycache__/
 .pytest_cache/
 *.log
 debug_redacted_images/
+server/models/
+*.safetensors
+*.bin
+

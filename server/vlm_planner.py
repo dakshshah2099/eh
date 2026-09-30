@@ -691,6 +691,31 @@ def generate_plan(
                 base_url=base_url or get_ollama_base_url(),
                 model=active_model,
             )
+        elif active_provider in ("smolvlm", "local_smolvlm", "smolvlm_local") or active_model.lower().startswith("smolvlm"):
+            try:
+                from smolvlm_local import call_smolvlm, is_smolvlm_ready
+                if not is_smolvlm_ready():
+                    logger.warning("[SmolVLM] Local weights downloading or not ready, using heuristic fallback...")
+                    return fallback_plan(
+                        task=task,
+                        dom_skeleton=dom_skeleton,
+                        ui_elements=ui_elements,
+                        reason="SmolVLM local model weights downloading. Standby for weights."
+                    )
+                raw_response = call_smolvlm(
+                    prompt=prompt,
+                    image_base64=image_base64,
+                    system_prompt=SYSTEM_PROMPT,
+                    max_new_tokens=256
+                )
+            except Exception as smol_err:
+                logger.warning(f"[SmolVLM] Local inference error ({smol_err}), using fallback planner.")
+                return fallback_plan(
+                    task=task,
+                    dom_skeleton=dom_skeleton,
+                    ui_elements=ui_elements,
+                    reason=f"SmolVLM local error: {smol_err}"
+                )
         elif active_provider in ("fallback", "mock"):
             return fallback_plan(
                 task=task,
