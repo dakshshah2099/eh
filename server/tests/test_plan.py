@@ -1088,4 +1088,26 @@ def test_smolvlm_provider_routing(mock_ready, mock_call):
     mock_call.assert_called_once()
 
 
+def test_enrich_plan_actions_resolves_missing_target():
+    """Verify that an action with no target selector/bbox is resolved from ui_elements or dom_skeleton."""
+    from vlm_planner import enrich_plan_actions, PlanResponse, ActionItem
 
+    plan = PlanResponse(
+        actions=[
+            ActionItem(type="click", reason="Click search button")
+        ],
+        task_complete=False,
+        confidence=0.8
+    )
+
+    ui_elements = [
+        {"element_id": "search-btn", "label": "Search Flights", "bbox": [100, 200, 80, 40]}
+    ]
+    dom_skeleton = [
+        {"tag": "button", "id": "search-btn", "text": "Search Flights"}
+    ]
+
+    enriched = enrich_plan_actions(plan, task="Search flights", ui_elements=ui_elements, dom_skeleton=dom_skeleton)
+    assert enriched.actions[0].target_element_id == "search-btn"
+    assert enriched.actions[0].target_bbox == [100, 200, 80, 40]
+    assert enriched.actions[0].target_selector == "#search-btn"

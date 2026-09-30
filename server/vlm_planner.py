@@ -147,6 +147,10 @@ Output MUST be a single valid JSON object strictly matching this schema:
   "confidence": number between 0.0 and 1.0
 }
 
+INSTRUCTIONS FOR ACTION GENERATION:
+- Return ONLY the single immediate next action in the "actions" array.
+- Do NOT output placeholder strings like "string or null" or "|". Use actual selectors, IDs, or bounding boxes.
+- For click/type targets, prefer detected element IDs or CSS selectors matching buttons/inputs.
 
 TASK COMPLETION RULE:
 When the visible page state satisfies the original task goal, return { action: "done", reason: "<why task is complete>" } (or { type: "done", reason: "<why task is complete>" }) in the actions array and set "task_complete": true.
@@ -508,6 +512,96 @@ def parse_vlm_response(raw_text: str) -> PlanResponse:
     return plan_resp
 
 
+def match_target_from_context(
+    query: str,
+    ui_elements: Optional[List[Any]] = None,
+    dom_skeleton: Any = None,
+) -> Optional[Dict[str, Any]]:
+    """Searches ui_elements and dom_skeleton for the best matching interactive element based on text/label/tag."""
+    if not query:
+        return None
+    words = [w.lower() for w in re.split(r"\W+", str(query)) if len(w) > 2]
+    if not words:
+        return None
+
+    # 1. Search ui_elements
+    if ui_elements:
+        for elem in ui_elements:
+            if not isinstance(elem, dict):
+                continue
+            label = str(elem.get("label") or elem.get("text") or "").lower()
+            elem_id = str(elem.get("element_id") or elem.get("id") or "").lower()
+            if any(w in label or w in elem_id for w in words):
+                return {
+                    "bbox": elem.get("bbox"),
+                    "element_id": elem.get("element_id") or elem.get("id"),
+                    "selector": f"#{elem.get('element_id') or elem.get('id')}" if (elem.get("element_id") or elem.get("id")) else None,
+                }
+
+    # 2. Search dom_skeleton
+    def search_dom(node: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(node, list):
+            for child in node:
+                res = search_dom(child)
+                if res:
+                    return res
+        elif isinstance(node, dict):
+            text = str(node.get("text") or node.get("innerText") or node.get("value") or "").lower()
+            elem_id = str(node.get("id") or "").lower()
+            name = str(node.get("name") or "").lower()
+            selector = node.get("selector")
+            tag = str(node.get("tag") or node.get("tagName") or "").lower()
+
+            if any(w in text or w in elem_id or w in name for w in words):
+                sel = selector or (f"#{node.get('id')}" if node.get("id") else None) or (f"{tag}[name='{node.get('name')}']" if node.get("name") else None)
+                return {
+                    "selector": sel,
+                    "element_id": node.get("id"),
+                    "bbox": node.get("bbox"),
+                }
+            for child in node.get("children", []):
+                res = search_dom(child)
+                if res:
+                    return res
+        return None
+
+    return search_dom(dom_skeleton)
+
+
+def enrich_plan_actions(
+    plan_resp: PlanResponse,
+    task: str,
+    ui_elements: Optional[List[Any]] = None,
+    dom_skeleton: Any = None,
+) -> PlanResponse:
+    """Enriches actions that lack target locators by matching against UI elements or DOM skeleton."""
+    for action in plan_resp.actions:
+        if action.type in ("click", "type", "hover", "press", "fill_secret"):
+            has_target = bool(action.target_selector or action.target_bbox or action.target_element_id)
+            if not has_target:
+                query = action.reason or action.text or task
+                matched = match_target_from_context(query, ui_elements, dom_skeleton)
+                if matched:
+                    if matched.get("bbox") and not action.target_bbox:
+                        action.target_bbox = matched["bbox"]
+                    if matched.get("element_id") and not action.target_element_id:
+                        action.target_element_id = matched["element_id"]
+                    if matched.get("selector") and not action.target_selector:
+                        action.target_selector = matched["selector"]
+            elif action.target_selector and not action.target_bbox and not action.target_element_id:
+                sel = str(action.target_selector).strip()
+                if " " in sel and not any(combinator in sel for combinator in (">", "+", "~", "[", "#", ".")):
+                    matched = match_target_from_context(sel, ui_elements, dom_skeleton)
+                    if matched:
+                        if matched.get("bbox"):
+                            action.target_bbox = matched["bbox"]
+                        if matched.get("element_id"):
+                            action.target_element_id = matched["element_id"]
+                        if matched.get("selector"):
+                            action.target_selector = matched["selector"]
+    return plan_resp
+
+
 def call_ollama(
     prompt: str,
     image_base64: str,
@@ -792,6 +886,12 @@ def generate_plan(
             raise ValueError(f"Unsupported VLM provider: {active_provider}")
 
         plan_resp = parse_vlm_response(raw_response)
+        plan_resp = enrich_plan_actions(
+            plan_resp=plan_resp,
+            task=task,
+            ui_elements=ui_elements,
+            dom_skeleton=dom_skeleton,
+        )
         plan_resp.planner = PlannerMeta(
             mode="vlm",
             provider=active_provider,

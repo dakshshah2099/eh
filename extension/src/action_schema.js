@@ -17,7 +17,10 @@ export const ALLOWED_ACTION_TYPES = new Set([
   'wait',
   'navigate',
   'fill_secret',
-  'done'
+  'done',
+  'submit',
+  'press',
+  'hover'
 ]);
 
 /**
@@ -138,10 +141,14 @@ export function validateAction(action) {
       action.target_bbox ||
       action.bbox ||
       action.point ||
-      action.target
+      action.target ||
+      action.text ||
+      action.label ||
+      action.name ||
+      action.reason
     );
     if (!hasTarget) {
-      return { valid: false, error: `Action "${type}" requires a target locator (element_id, selector, or bbox)` };
+      return { valid: false, error: `Action "${type}" requires a target locator (element_id, selector, bbox, or target description)` };
     }
   }
 

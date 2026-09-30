@@ -165,61 +165,102 @@ export function clearLocalSecrets() {
  * @param {Object} target - Locator or action parameter
  * @returns {{ x: number, y: number }|null}
  */
-export function getCenterCoordinates(target) {
+export function getCenterCoordinates(target, options = {}) {
   if (!target || typeof target !== 'object') return null;
 
+  let rawX = null;
+  let rawY = null;
+
   if (Array.isArray(target) && target.length >= 2) {
-    const x = target[0] || 0;
-    const y = target[1] || 0;
-    const w = target[2] || 0;
-    const h = target[3] || 0;
-    return {
-      x: x + w / 2,
-      y: y + h / 2
-    };
-  }
-
-  if (typeof target.x === 'number' && typeof target.y === 'number') {
-    return { x: target.x, y: target.y };
-  }
-
-  const pt = target.point || target.coordinates;
-  if (Array.isArray(pt) && pt.length >= 2) {
-    return { x: pt[0], y: pt[1] };
-  }
-  if (pt && typeof pt === 'object') {
-    if (typeof pt.x === 'number' && typeof pt.y === 'number') {
-      return { x: pt.x, y: pt.y };
+    const x = Number(target[0]) || 0;
+    const y = Number(target[1]) || 0;
+    const w = Number(target[2]) || 0;
+    const h = Number(target[3]) || 0;
+    rawX = x + w / 2;
+    rawY = y + h / 2;
+  } else if (typeof target.x === 'number' && typeof target.y === 'number') {
+    rawX = target.x;
+    rawY = target.y;
+  } else {
+    const pt = target.point || target.coordinates;
+    if (Array.isArray(pt) && pt.length >= 2) {
+      rawX = Number(pt[0]) || 0;
+      rawY = Number(pt[1]) || 0;
+    } else if (pt && typeof pt === 'object') {
+      if (typeof pt.x === 'number' && typeof pt.y === 'number') {
+        rawX = pt.x;
+        rawY = pt.y;
+      } else if (typeof pt.clientX === 'number' && typeof pt.clientY === 'number') {
+        rawX = pt.clientX;
+        rawY = pt.clientY;
+      }
     }
-    if (typeof pt.clientX === 'number' && typeof pt.clientY === 'number') {
-      return { x: pt.clientX, y: pt.clientY };
+
+    if (rawX === null) {
+      const bbox = target.target_bbox || target.bbox;
+      if (Array.isArray(bbox) && bbox.length >= 2) {
+        const x = Number(bbox[0]) || 0;
+        const y = Number(bbox[1]) || 0;
+        const w = Number(bbox[2]) || 0;
+        const h = Number(bbox[3]) || 0;
+        rawX = x + w / 2;
+        rawY = y + h / 2;
+      } else if (bbox && typeof bbox === 'object') {
+        const x = Number(bbox.x ?? bbox.left ?? 0);
+        const y = Number(bbox.y ?? bbox.top ?? 0);
+        const w = Number(bbox.width ?? bbox.w ?? 0);
+        const h = Number(bbox.height ?? bbox.h ?? 0);
+        rawX = x + w / 2;
+        rawY = y + h / 2;
+      }
     }
   }
 
-  const bbox = target.target_bbox || target.bbox;
-  if (Array.isArray(bbox) && bbox.length >= 2) {
-    const x = bbox[0] || 0;
-    const y = bbox[1] || 0;
-    const w = bbox[2] || 0;
-    const h = bbox[3] || 0;
+  if (rawX === null || rawY === null) return null;
+
+  const win = typeof window !== 'undefined' ? window : null;
+  const vpWidth = win?.innerWidth || options.viewport?.width || 1024;
+  const vpHeight = win?.innerHeight || options.viewport?.height || 768;
+
+  // Case 1: Normalized [0..1]
+  if (rawX > 0 && rawX <= 1.0 && rawY > 0 && rawY <= 1.0) {
     return {
-      x: x + w / 2,
-      y: y + h / 2
+      x: Math.round(rawX * vpWidth),
+      y: Math.round(rawY * vpHeight)
     };
   }
 
-  if (bbox && typeof bbox === 'object') {
-    const x = bbox.x ?? bbox.left ?? 0;
-    const y = bbox.y ?? bbox.top ?? 0;
-    const w = bbox.width ?? bbox.w ?? 0;
-    const h = bbox.height ?? bbox.h ?? 0;
+  // Case 2: 1000-scale [0..1000]
+  if (options.coordinate_space === 'norm1000' || target.coordinate_space === 'norm1000' ||
+      (options.coordinate_space === '1000' && rawX <= 1000 && rawY <= 1000)) {
     return {
-      x: x + w / 2,
-      y: y + h / 2
+      x: Math.round((rawX / 1000) * vpWidth),
+      y: Math.round((rawY / 1000) * vpHeight)
     };
   }
 
-  return null;
+  // Case 3: Downscaled image scale (e.g. scale: 0.4)
+  const scale = Number(options.scale || target.scale || options.image?.scale || 0);
+  if (scale > 0 && scale < 1.0) {
+    return {
+      x: Math.round(rawX / scale),
+      y: Math.round(rawY / scale)
+    };
+  }
+
+  // Case 4: Image width/height specified (scale to viewport)
+  const imgW = Number(options.image?.width || options.imageWidth || 0);
+  const imgH = Number(options.image?.height || options.imageHeight || 0);
+  if (imgW > 0 && imgH > 0 && (Math.abs(imgW - vpWidth) > 5 || Math.abs(imgH - vpHeight) > 5)) {
+    if (rawX <= imgW + 10 && rawY <= imgH + 10) {
+      return {
+        x: Math.round(rawX * (vpWidth / imgW)),
+        y: Math.round(rawY * (vpHeight / imgH))
+      };
+    }
+  }
+
+  return { x: Math.round(rawX), y: Math.round(rawY) };
 }
 
 /**
@@ -229,11 +270,14 @@ export function getCenterCoordinates(target) {
  * - XPath (target_xpath, xpath)
  * - Bounding box center (target_bbox, bbox) via document.elementFromPoint
  * - Coordinate point via document.elementFromPoint
+ * - Text / label / placeholder search across interactive controls
+ * - Semantic keyword fallback based on task / reason
  *
  * @param {Object|Element|string} target - Locator specification
+ * @param {Object} [options={}] - Options (scale, viewport, task)
  * @returns {Element|null} The resolved DOM element or null
  */
-export function resolveTarget(target) {
+export function resolveTarget(target, options = {}) {
   if (!target) return null;
 
   if (typeof Element !== 'undefined' && target instanceof Element) {
@@ -247,7 +291,7 @@ export function resolveTarget(target) {
   }
 
   if (typeof target === 'string') {
-    return resolveTarget({ selector: target });
+    return resolveTarget({ selector: target }, options);
   }
 
   const doc = typeof document !== 'undefined' ? document : null;
@@ -256,14 +300,16 @@ export function resolveTarget(target) {
   // 1. Try element_id / target_element_id first (ticket 06 - primary target)
   const elementId = target.target_element_id || target.element_id || target.id;
   if (elementId && typeof elementId === 'string') {
+    const rawId = elementId.trim();
+    const cleanId = rawId.startsWith('#') ? rawId.slice(1) : rawId;
     try {
       if (typeof doc.getElementById === 'function') {
-        const el = doc.getElementById(elementId);
+        const el = doc.getElementById(cleanId);
         if (el) return el;
       }
       if (typeof doc.querySelector === 'function') {
-        const cleanId = elementId.replace(/["'\\]/g, '');
-        const el = doc.querySelector(`[data-element-id="${cleanId}"], [id="${cleanId}"]`);
+        const sanitized = cleanId.replace(/["'\\]/g, '');
+        const el = doc.querySelector(`[data-element-id="${sanitized}"], [id="${sanitized}"]`);
         if (el) return el;
       }
     } catch (_) {}
@@ -272,20 +318,27 @@ export function resolveTarget(target) {
   // 2. Try CSS selector with safety check (reject script injection / dangerous constructs)
   const selector = target.target_selector || target.selector || target.cssSelector;
   if (selector && typeof selector === 'string') {
-    const isDangerous = /<script|javascript:|on\w+=/i.test(selector);
+    const sel = selector.trim();
+    // If it looks like an ID without leading # e.g. "submit-btn" and contains no spaces/special selector chars
+    if (/^[a-zA-Z0-9_\-]+$/.test(sel)) {
+      const byId = doc.getElementById ? doc.getElementById(sel) : null;
+      if (byId) return byId;
+    }
+
+    const isDangerous = /<script|javascript:|on\w+=/i.test(sel);
     if (!isDangerous) {
       try {
         if (typeof doc.querySelector === 'function') {
-          const el = doc.querySelector(selector);
+          const el = doc.querySelector(sel);
           if (el) return el;
         }
-      } catch (e) {
-        console.warn('[ActionExecutor] querySelector failed for:', selector, e);
+      } catch (_) {
+        // Query selector failed (e.g. invalid selector syntax like text name)
       }
     }
   }
 
-  // 2. Try XPath
+  // 3. Try XPath
   const xpath = target.target_xpath || target.xpath;
   if (xpath && typeof xpath === 'string') {
     try {
@@ -298,16 +351,58 @@ export function resolveTarget(target) {
           return result.singleNodeValue;
         }
       }
-    } catch (e) {
-      console.warn('[ActionExecutor] XPath failed for:', xpath, e);
+    } catch (_) {}
+  }
+
+  // 4. Try Bounding Box center or point via elementFromPoint with viewport scaling
+  const coords = getCenterCoordinates(target, options);
+  if (coords && typeof doc.elementFromPoint === 'function') {
+    const el = doc.elementFromPoint(coords.x, coords.y);
+    if (el) {
+      // If hit non-interactive wrapper (e.g. SVG path, div), find closest interactive control
+      const interactive = (typeof el.closest === 'function')
+        ? (el.closest('button, a, input, select, textarea, [role="button"], [role="link"], [tabindex]') || el)
+        : el;
+      return interactive;
     }
   }
 
-  // 3. Try Bounding Box center or point via elementFromPoint
-  const coords = getCenterCoordinates(target);
-  if (coords && typeof doc.elementFromPoint === 'function') {
-    const el = doc.elementFromPoint(coords.x, coords.y);
-    if (el) return el;
+  // 5. Try finding by element text / label / placeholder / name
+  const searchText = (target.text || target.label || target.name || target.placeholder || target.value || selector || '').trim();
+  if (searchText && searchText.length < 100 && !searchText.startsWith('<')) {
+    const searchLower = searchText.toLowerCase();
+    const candidates = Array.from(doc.querySelectorAll('button, a, input, [role="button"], label, textarea'));
+    for (const cand of candidates) {
+      const candText = (cand.innerText || cand.textContent || '').trim().toLowerCase();
+      const candVal = (cand.value || '').trim().toLowerCase();
+      const candAria = (cand.getAttribute('aria-label') || '').trim().toLowerCase();
+      const candName = (cand.getAttribute('name') || '').trim().toLowerCase();
+      if (candText === searchLower || candVal === searchLower || candAria === searchLower || candName === searchLower) {
+        return cand;
+      }
+    }
+    // Partial contains match
+    for (const cand of candidates) {
+      const candText = (cand.innerText || cand.textContent || '').trim().toLowerCase();
+      if (candText && (candText.includes(searchLower) || searchLower.includes(candText))) {
+        return cand;
+      }
+    }
+  }
+
+  // 6. Semantic search from task description or action reason if still not found
+  const fallbackQuery = (target.reason || options.task || '').toLowerCase();
+  if (fallbackQuery) {
+    const interactiveCandidates = Array.from(doc.querySelectorAll('button, input[type="submit"], input[type="button"], [role="button"], a'));
+    for (const kw of ['submit', 'sign in', 'log in', 'login', 'continue', 'search', 'next', 'save', 'send', 'confirm']) {
+      if (fallbackQuery.includes(kw)) {
+        const found = interactiveCandidates.find(c => {
+          const t = (c.innerText || c.textContent || c.value || c.getAttribute('aria-label') || '').toLowerCase();
+          return t.includes(kw);
+        });
+        if (found) return found;
+      }
+    }
   }
 
   return null;
@@ -318,16 +413,17 @@ export function resolveTarget(target) {
  * Focuses element and fires mousedown, mouseup, and click MouseEvents.
  *
  * @param {Object} params - Click parameters (target_selector, target_bbox, etc.)
+ * @param {Object} [options={}] - Options (scale, viewport, task)
  * @returns {Promise<Object>} Execution result
  */
-export async function executeClick(params = {}) {
-  const targetEl = resolveTarget(params);
+export async function executeClick(params = {}, options = {}) {
+  const targetEl = resolveTarget(params, options);
   if (!targetEl) {
     throw new Error(`Target element not found for click: ${JSON.stringify(params)}`);
   }
 
   // Determine coordinates
-  let coords = getCenterCoordinates(params);
+  let coords = getCenterCoordinates(params, options);
   if (!coords && typeof targetEl.getBoundingClientRect === 'function') {
     const rect = targetEl.getBoundingClientRect();
     coords = {
@@ -639,7 +735,7 @@ export async function executeType(target, text, options = {}) {
     textToType = '';
   }
 
-  const targetEl = resolveTarget(targetParam);
+  const targetEl = resolveTarget(targetParam, opts);
   if (!targetEl) {
     throw new Error(`Target element not found for type: ${JSON.stringify(targetParam)}`);
   }
@@ -943,16 +1039,44 @@ export async function executeAction(action, options = {}) {
 
   switch (type) {
     case 'click':
-      return await executeClick(actionData);
+      return await executeClick(actionData, options);
     case 'scroll':
       return await executeScroll(actionData);
     case 'type':
     case 'input':
-      return await executeType(actionData);
+      return await executeType(actionData, undefined, options);
     case 'fill_secret':
       return await executeFillSecret(actionData);
     case 'navigate':
       return await executeNavigate(actionData);
+    case 'submit': {
+      const targetEl = resolveTarget(actionData, options);
+      if (targetEl && typeof targetEl.submit === 'function') {
+        targetEl.submit();
+        return { success: true, action: 'submit' };
+      }
+      return await executeClick(actionData, options);
+    }
+    case 'press':
+    case 'key': {
+      const key = actionData.key || 'Enter';
+      const targetEl = resolveTarget(actionData, options) || (typeof document !== 'undefined' ? (document.activeElement || document.body) : null);
+      if (targetEl && typeof targetEl.dispatchEvent === 'function') {
+        targetEl.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true }));
+        targetEl.dispatchEvent(new KeyboardEvent('keyup', { key, code: key, bubbles: true, cancelable: true }));
+      }
+      return { success: true, action: 'press', key };
+    }
+    case 'hover':
+    case 'mouse_move': {
+      const targetEl = resolveTarget(actionData, options);
+      if (targetEl && typeof targetEl.dispatchEvent === 'function') {
+        targetEl.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }));
+        targetEl.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
+        return { success: true, action: 'hover' };
+      }
+      return { success: false, action: 'hover', error: 'Target not found' };
+    }
     case 'wait':
       const ms = Number(actionData.delay_ms || actionData.ms || 500);
       await new Promise(r => setTimeout(r, ms));

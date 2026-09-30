@@ -218,7 +218,7 @@ export async function extractDomSkeletonFromTab(tabId = null, options = {}) {
  * @param {object|Array} [action={}] - Action or list of actions to execute
  * @returns {Promise<object>} Action execution result
  */
-export async function executeActionInTab(tabId = null, action = {}) {
+export async function executeActionInTab(tabId = null, action = {}, options = {}) {
   let targetTabId = tabId;
   if (targetTabId == null) {
     const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -234,7 +234,8 @@ export async function executeActionInTab(tabId = null, action = {}) {
   await ensureContentScript(targetTabId);
   return await chrome.tabs.sendMessage(targetTabId, {
     type: 'ACTION_EXECUTE',
-    action
+    action,
+    options
   });
 }
 
@@ -588,15 +589,19 @@ export async function startLoop(tabId = null, task = '', options = {}) {
         } catch (_) {}
       }
 
-      // Check for immediate completion via 'done' action or task_complete flag
-      const doneAction = Array.isArray(lastPlan?.actions)
-        ? lastPlan.actions.find(a => (a?.type || a?.action || '').toLowerCase() === 'done')
-        : null;
+      // Check for immediate completion: only when there are NO non-done executable actions
+      const nonDoneActions = Array.isArray(lastPlan?.actions)
+        ? lastPlan.actions.filter(a => {
+            const t = (a?.type || a?.action || '').toLowerCase();
+            return t && t !== 'done';
+          })
+        : [];
 
-      if (doneAction || lastPlan?.task_complete) {
-        console.log(`[Background] Task complete signaled at step ${step}.`);
+      if (nonDoneActions.length === 0 && (lastPlan?.task_complete || lastPlan?.actions?.some(a => (a?.type || a?.action || '').toLowerCase() === 'done'))) {
+        console.log(`[Background] Task complete signaled at step ${step} with no remaining actions.`);
         taskComplete = true;
-        completionReason = doneAction?.reason || lastPlan?.reason || '';
+        const doneAction = lastPlan?.actions?.find(a => (a?.type || a?.action || '').toLowerCase() === 'done');
+        completionReason = doneAction?.reason || lastPlan?.reason || 'Task complete';
         stepRecord.actionResults.push({
           success: true,
           action: 'done',
@@ -721,7 +726,14 @@ export async function startLoop(tabId = null, task = '', options = {}) {
         }
 
         console.log(`[Background] Executing action at step ${step}:`, act);
-        const actionResult = await executeActionInTab(targetTabId, act);
+        const actionOptions = {
+          scale: planResult?.payload?.image?.scale ?? planResult?.scale ?? 1.0,
+          image: planResult?.payload?.image ?? null,
+          viewport: planResult?.payload?.viewport ?? null,
+          coordinate_space: planResult?.payload?.coordinate_space ?? 'viewport',
+          task: targetTask
+        };
+        const actionResult = await executeActionInTab(targetTabId, act, actionOptions);
         stepRecord.actionResults.push(actionResult);
 
         const actionExecutedEvent = {
@@ -743,6 +755,11 @@ export async function startLoop(tabId = null, task = '', options = {}) {
       }
 
       history.push(stepRecord);
+
+      if (!taskComplete && lastPlan?.task_complete) {
+        taskComplete = true;
+        completionReason = lastPlan?.reason || 'Plan marked task as complete';
+      }
 
       if (taskComplete || !agentState.isRunning || opts.signal?.aborted) {
         break;
