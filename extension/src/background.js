@@ -323,6 +323,31 @@ export function getSessionStorage() {
 }
 
 /**
+ * Updates agentState in memory, local storage, and session storage.
+ * @param {object} [partial={}]
+ * @returns {Promise<object>} Updated agentState
+ */
+export async function updateAgentState(partial = {}) {
+  Object.assign(agentState, partial);
+  if (typeof chrome !== 'undefined' && chrome.storage?.local?.set) {
+    try {
+      await chrome.storage.local.set({ agentState });
+    } catch (err) {
+      console.warn('[Background] Failed to save agentState to local storage:', err);
+    }
+  }
+  try {
+    const session = getSessionStorage();
+    if (session && typeof session.set === 'function') {
+      await session.set({ agentState });
+    }
+  } catch (err) {
+    console.warn('[Background] Failed to sync agentState to session storage:', err);
+  }
+  return agentState;
+}
+
+/**
  * Extracts a sanitized, non-PII target locator string from an action.
  * Ensures field text/values are NEVER included.
  *
@@ -423,51 +448,58 @@ export async function recordAgentStatus(eventPayload) {
  * @param {object} [options={}] - Loop options (maxSteps, domSettleDelay, serverUrl, etc.)
  * @returns {Promise<object>} Loop result summary
  */
+let activeLoopPromise = null;
+
 export async function startLoop(tabId = null, task = '', options = {}) {
-  let targetTabId = tabId;
-  let targetTask = task;
-  let opts = options || {};
+  const executeLoop = async () => {
+    let targetTabId = tabId;
+    let targetTask = task;
+    let opts = options || {};
 
-  if (typeof tabId === 'object' && tabId !== null && task === '') {
-    opts = tabId;
-    targetTabId = opts.tabId ?? null;
-    targetTask = opts.task || '';
-  }
-
-  if (targetTabId == null) {
-    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    targetTabId = tabs[0]?.id;
-    if (targetTabId == null) {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      targetTabId = activeTab?.id;
+    if (typeof tabId === 'object' && tabId !== null && task === '') {
+      opts = tabId;
+      targetTabId = opts.tabId ?? null;
+      targetTask = opts.task || '';
     }
-  }
-  if (targetTabId == null) {
-    throw new Error('No target tab specified or active tab found');
-  }
 
-  const maxSteps = opts.maxSteps ?? opts.max_steps ?? 10;
-  const domSettleDelay = opts.domSettleDelay ?? opts.dom_settle_delay ?? 600;
-  const serverUrl = opts.serverUrl || DEFAULT_SERVER_URL;
-  const redactionMap = opts.redactionMap || [];
-  const onStep = opts.onStep;
+    if (targetTabId == null) {
+      const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      targetTabId = tabs[0]?.id;
+      if (targetTabId == null) {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        targetTabId = activeTab?.id;
+      }
+    }
+    if (targetTabId == null) {
+      throw new Error('No target tab specified or active tab found');
+    }
 
-  const sessionId = opts.sessionId || opts.session_id || `tab_${targetTabId}`;
-  const taskId = opts.taskId || opts.task_id || `task_${Date.now()}`;
+    const maxSteps = opts.maxSteps ?? opts.max_steps ?? 10;
+    const domSettleDelay = opts.domSettleDelay ?? opts.dom_settle_delay ?? 600;
+    const serverUrl = opts.serverUrl || DEFAULT_SERVER_URL;
+    const redactionMap = opts.redactionMap || [];
+    const onStep = opts.onStep;
 
-  await ensureOffscreenDocument();
-  await ensureState();
-  await clearStatusLog();
-  agentState.isRunning = true;
-  agentState.currentTabId = targetTabId;
-  agentState.currentTask = targetTask;
-  agentState.currentTaskId = taskId;
-  agentState.currentSessionId = sessionId;
-  agentState.stepCount = 0;
-  agentState.lastStartedAt = Date.now();
-  await chrome.storage.local.set({ agentState });
+    const sessionId = opts.sessionId || opts.session_id || `tab_${targetTabId}`;
+    const taskId = opts.taskId || opts.task_id || `task_${Date.now()}`;
 
-  console.log(`[Background] Autonomous loop started for tab ${targetTabId}, task: "${targetTask}", maxSteps: ${maxSteps}`);
+    await ensureOffscreenDocument();
+    await ensureState();
+    await clearStatusLog();
+    agentState.isRunning = true;
+    agentState.currentTabId = targetTabId;
+    agentState.currentTask = targetTask;
+    agentState.currentTaskId = taskId;
+    agentState.currentSessionId = sessionId;
+    agentState.stepCount = 0;
+    agentState.lastStartedAt = Date.now();
+    agentState.lastStoppedAt = null;
+    agentState.lastCompletionStatus = null;
+    agentState.lastCompletionReason = null;
+    agentState.lastError = null;
+    await updateAgentState();
+
+    console.log(`[Background] Autonomous loop started for tab ${targetTabId}, task: "${targetTask}", maxSteps: ${maxSteps}`);
 
   const history = [];
   let step = 0;
@@ -484,7 +516,7 @@ export async function startLoop(tabId = null, task = '', options = {}) {
 
       step++;
       agentState.stepCount = step;
-      await chrome.storage.local.set({ agentState });
+      await updateAgentState();
 
       console.log(`[Background] Loop step ${step}/${maxSteps} starting...`);
 
@@ -669,9 +701,9 @@ export async function startLoop(tabId = null, task = '', options = {}) {
   } finally {
     agentState.isRunning = false;
     agentState.lastStoppedAt = Date.now();
-    agentState.lastCompletionStatus = taskComplete ? 'done' : (step >= maxSteps ? 'exhausted' : null);
-    agentState.lastCompletionReason = taskComplete ? completionReason : (step >= maxSteps ? 'Max steps reached' : null);
-    await chrome.storage.local.set({ agentState });
+    agentState.lastCompletionStatus = taskComplete ? 'done' : (step >= maxSteps ? 'exhausted' : 'stopped');
+    agentState.lastCompletionReason = taskComplete ? completionReason : (step >= maxSteps ? 'Max steps reached' : 'Agent stopped by user');
+    await updateAgentState();
     console.log(`[Background] Autonomous loop finished at step ${step}. Task complete: ${taskComplete}`);
   }
 
@@ -732,6 +764,36 @@ export async function startLoop(tabId = null, task = '', options = {}) {
       try { opts.onTaskExhausted(exhaustedPayload); } catch (_) {}
     }
     broadcastTaskMessage(exhaustedPayload);
+  } else {
+    // Loop stopped early via stopLoop / takeback
+    const stoppedStatusEvent = {
+      event: 'TASK_STOPPED',
+      step,
+      stepCount: step,
+      steps: step,
+      maxSteps,
+      taskId,
+      sessionId,
+      message: '⏹ Agent stopped — control returned to user'
+    };
+    await recordAgentStatus(stoppedStatusEvent);
+    if (typeof opts.onStatus === 'function') {
+      try { opts.onStatus(stoppedStatusEvent); } catch (_) {}
+    }
+
+    const stoppedPayload = {
+      type: 'TASK_STOPPED',
+      stepCount: step,
+      steps: step,
+      maxSteps,
+      taskId,
+      sessionId,
+      reason: 'Agent stopped by user'
+    };
+    if (typeof opts.onTaskStopped === 'function') {
+      try { opts.onTaskStopped(stoppedPayload); } catch (_) {}
+    }
+    broadcastTaskMessage(stoppedPayload);
   }
 
   return {
@@ -745,20 +807,53 @@ export async function startLoop(tabId = null, task = '', options = {}) {
     taskId,
     history
   };
+  };
+
+  activeLoopPromise = executeLoop();
+  try {
+    return await activeLoopPromise;
+  } finally {
+    activeLoopPromise = null;
+  }
 }
 
 /**
  * Stops any currently running autonomous agent loop.
+ * Exits at the next safe checkpoint (after the current action completes).
  * @returns {Promise<{ success: boolean, isRunning: boolean }>}
  */
 export async function stopLoop() {
   await ensureState();
-  if (!agentState.isRunning) {
+  if (!agentState.isRunning && !activeLoopPromise) {
     return { success: true, isRunning: false, message: 'Agent already stopped' };
   }
   agentState.isRunning = false;
   agentState.lastStoppedAt = Date.now();
-  await chrome.storage.local.set({ agentState });
+  agentState.lastCompletionStatus = 'stopped';
+  agentState.lastCompletionReason = 'Agent stopped by user';
+  await updateAgentState();
+
+  if (!activeLoopPromise) {
+    const stoppedStatusEvent = {
+      event: 'TASK_STOPPED',
+      step: agentState.stepCount || 0,
+      stepCount: agentState.stepCount || 0,
+      steps: agentState.stepCount || 0,
+      maxSteps: 10,
+      taskId: agentState.currentTaskId || null,
+      sessionId: agentState.currentSessionId || null,
+      message: '⏹ Agent stopped — control returned to user'
+    };
+    await recordAgentStatus(stoppedStatusEvent);
+    broadcastTaskMessage({
+      type: 'TASK_STOPPED',
+      stepCount: agentState.stepCount || 0,
+      steps: agentState.stepCount || 0,
+      maxSteps: 10,
+      reason: 'Agent stopped by user'
+    });
+  }
+
   console.log('[Background] Agent loop stopped at:', new Date(agentState.lastStoppedAt).toISOString());
   return { success: true, isRunning: false };
 }
@@ -810,6 +905,7 @@ globalThis.recordAgentStatus = recordAgentStatus;
 globalThis.clearStatusLog = clearStatusLog;
 globalThis.getSanitizedActionTarget = getSanitizedActionTarget;
 globalThis.getSessionStorage = getSessionStorage;
+globalThis.updateAgentState = updateAgentState;
 globalThis.MAX_STATUS_EVENTS = MAX_STATUS_EVENTS;
 
 export {
@@ -831,26 +927,52 @@ export {
 // Initialize state from storage
 if (typeof chrome !== 'undefined' && chrome.runtime?.onInstalled?.addListener) {
   chrome.runtime.onInstalled.addListener(async () => {
-    await chrome.storage.local.set({ agentState });
+    agentState = {
+      isRunning: false,
+      lastStartedAt: null,
+      lastStoppedAt: null,
+      currentTask: null,
+      currentTaskId: null,
+      currentTabId: null,
+      stepCount: 0,
+      lastCompletionStatus: null,
+      lastCompletionReason: null,
+      lastError: null
+    };
+    await updateAgentState();
     console.log('[Background] Extension installed, agentState initialized.');
   });
 }
 
 if (typeof chrome !== 'undefined' && chrome.runtime?.onStartup?.addListener) {
   chrome.runtime.onStartup.addListener(async () => {
-    const data = await chrome.storage.local.get('agentState');
-    if (data.agentState) {
-      agentState = data.agentState;
+    await ensureState();
+    if (agentState.isRunning) {
+      agentState.isRunning = false;
+      agentState.lastStoppedAt = Date.now();
     }
+    await updateAgentState();
     console.log('[Background] Extension startup, agentState:', agentState);
   });
 }
 
 // Sync in-memory state on service worker wake
-async function ensureState() {
-  const data = await chrome.storage.local.get('agentState');
-  if (data.agentState) {
-    agentState = data.agentState;
+export async function ensureState() {
+  const session = getSessionStorage();
+  if (session && typeof session.get === 'function') {
+    try {
+      const sData = await session.get('agentState');
+      if (sData?.agentState) {
+        agentState = { ...agentState, ...sData.agentState };
+        return agentState;
+      }
+    } catch (_) {}
+  }
+  if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+    const data = await chrome.storage.local.get('agentState');
+    if (data?.agentState) {
+      agentState = { ...agentState, ...data.agentState };
+    }
   }
   return agentState;
 }
@@ -885,6 +1007,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
           sendResponse({ success: true, state });
           break;
         }
+        case 'START_AUTONOMOUS_LOOP':
         case 'START_LOOP':
         case 'START_AGENT_LOOP':
         case 'START_AGENT': {
@@ -902,19 +1025,24 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
           // Optimistic early state update in storage and memory before async loop init
           agentState.isRunning = true;
           agentState.lastStartedAt = Date.now();
+          agentState.lastStoppedAt = null;
           agentState.currentTabId = tabId;
           agentState.currentTask = task;
           agentState.stepCount = 0;
           agentState.lastError = null;
-          await chrome.storage.local.set({ agentState });
+          agentState.lastCompletionStatus = null;
+          agentState.lastCompletionReason = null;
+          await updateAgentState();
 
-          if (message.async) {
+          if (message.async || message.type === 'START_AUTONOMOUS_LOOP') {
             startLoop(tabId, task, options).catch(async err => {
               console.error('[Background] Async loop error:', err);
               agentState.isRunning = false;
               agentState.lastStoppedAt = Date.now();
               agentState.lastError = err?.message || String(err);
-              await chrome.storage.local.set({ agentState });
+              agentState.lastCompletionStatus = 'error';
+              agentState.lastCompletionReason = err?.message || String(err);
+              await updateAgentState();
             });
             sendResponse({ success: true, isRunning: true, message: 'Loop started' });
           } else {
@@ -923,6 +1051,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
           }
           break;
         }
+        case 'STOP_AUTONOMOUS_LOOP':
         case 'STOP_LOOP':
         case 'STOP_AGENT_LOOP':
         case 'STOP_AGENT': {

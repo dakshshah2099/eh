@@ -19,6 +19,15 @@
       <p class="subtitle">On-Device Visual Perception</p>
     </header>
 
+    <!-- Running State Read-Only Task Card (Visible when agent is running) -->
+    <div id="runningTaskCard" class="card running-task-card hidden">
+      <div class="section-header" style="margin-bottom: 4px;">
+        <span class="label" style="font-weight: 600; color: var(--primary);">Active Task</span>
+        <span class="badge badge-running">RUNNING</span>
+      </div>
+      <div id="runningTaskDescription" class="running-task-text"></div>
+    </div>
+
     <div class="card status-card">
       <div class="status-row">
         <span class="label">Status:</span>
@@ -29,17 +38,6 @@
       </div>
       <div class="info-row">
         <span id="runtimeInfo" class="info-text">Backend: Checking...</span>
-      </div>
-    </div>
-
-    <!-- Live Status Log Card -->
-    <div class="card" id="statusLogCard">
-      <div class="section-header" style="margin-bottom: 6px;">
-        <span class="label" style="font-weight: 600;">Activity Stream</span>
-        <button id="clearLogBtn" class="icon-btn" type="button" title="Clear log" style="font-size: 11px; padding: 2px 6px;">Clear</button>
-      </div>
-      <div id="statusLogPanel" class="status-log-panel" role="log" aria-live="polite">
-        <div class="log-empty-msg" id="logEmptyMsg">No activity yet</div>
       </div>
     </div>
 
@@ -176,14 +174,35 @@
       </div>
     </div>
 
-    <div class="task-group" style="margin-bottom: 12px;">
-      <label for="taskInput" style="font-size: 11px; font-weight: 600; color: #4b5563; display: block; margin-bottom: 4px;">Task Goal:</label>
-      <input type="text" id="taskInput" value="Fill profile and submit form" style="width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;" />
+    <!-- Running State Controls (Visible only when agent is running) -->
+    <div id="runningSection" class="running-section hidden" style="margin-bottom: 12px;">
+      <div class="actions">
+        <button id="takebackBtn" class="btn btn-danger takeback-btn">Take back control</button>
+      </div>
     </div>
 
-    <div class="actions" style="display: flex; flex-direction: column; gap: 8px;">
-      <button id="toggleBtn" class="btn btn-primary">Start Agent</button>
-      <button id="highlightBtn" class="btn btn-secondary">🔍 Highlight PII Fields</button>
+    <!-- Idle State Controls (Visible only when agent is idle) -->
+    <div id="idleSection" class="idle-section" style="margin-bottom: 12px;">
+      <div class="task-group" style="margin-bottom: 10px;">
+        <label for="taskInput" class="field-label" style="font-size: 11px; font-weight: 600; color: #4b5563; display: block; margin-bottom: 4px;">Task Description:</label>
+        <textarea id="taskInput" class="field-input task-textarea" rows="3" placeholder="Describe what the agent should do…"></textarea>
+      </div>
+
+      <div class="actions" style="display: flex; flex-direction: column; gap: 8px;">
+        <button id="handoverBtn" class="btn btn-primary handover-btn">Hand over to agent</button>
+        <button id="highlightBtn" class="btn btn-secondary">🔍 Highlight PII Fields</button>
+      </div>
+    </div>
+
+    <!-- Live Status Log Card -->
+    <div class="card" id="statusLogCard">
+      <div class="section-header" style="margin-bottom: 6px;">
+        <span class="label" style="font-weight: 600;">Activity Stream</span>
+        <button id="clearLogBtn" class="icon-btn" type="button" title="Clear log" style="font-size: 11px; padding: 2px 6px;">Clear</button>
+      </div>
+      <div id="statusLogPanel" class="status-log-panel" role="log" aria-live="polite">
+        <div class="log-empty-msg" id="logEmptyMsg">No activity yet</div>
+      </div>
     </div>
 
     <footer class="footer">

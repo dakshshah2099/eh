@@ -36,40 +36,107 @@ const DEFAULT_BASE_URLS = {
 document.addEventListener('DOMContentLoaded', () => {
   const statusBadge = document.getElementById('statusBadge');
   const statusInfo  = document.getElementById('statusInfo');
-  const toggleBtn   = document.getElementById('toggleBtn');
+  const runningTaskCard = document.getElementById('runningTaskCard');
+  const runningTaskDescription = document.getElementById('runningTaskDescription');
+  const idleSection = document.getElementById('idleSection');
+  const runningSection = document.getElementById('runningSection');
+  const handoverBtn = document.getElementById('handoverBtn') || document.getElementById('toggleBtn');
+  const takebackBtn = document.getElementById('takebackBtn');
+  const toggleBtn   = handoverBtn; // Backwards compatibility alias
+  const taskInput   = document.getElementById('taskInput');
 
   let currentRunning = false;
 
-  // ── Agent status UI ──────────────────────────────────────────────────────
-  function updateUI(isRunning, lastStartedAt, lastStoppedAt) {
+  // ── Agent status & Handover/Takeback UI ──────────────────────────────────
+  function setAgentRunningUI(isRunning, taskDescription = null) {
     currentRunning = Boolean(isRunning);
+
     if (currentRunning) {
-      statusBadge.textContent = 'RUNNING';
-      statusBadge.className = 'badge badge-running';
-      toggleBtn.textContent = 'Stop Agent';
-      toggleBtn.className = 'btn btn-danger';
-      const timeStr = lastStartedAt ? new Date(lastStartedAt).toLocaleTimeString() : 'now';
-      statusInfo.textContent = `Loop active since ${timeStr}`;
+      if (statusBadge) {
+        statusBadge.textContent = 'RUNNING';
+        statusBadge.className = 'badge badge-running';
+      }
+      if (runningTaskCard) {
+        runningTaskCard.classList.remove('hidden');
+        runningTaskCard.style.display = 'block';
+      }
+      if (runningTaskDescription) {
+        const text = taskDescription || taskInput?.value?.trim() || 'Active task';
+        runningTaskDescription.textContent = text;
+      }
+      if (idleSection) {
+        idleSection.classList.add('hidden');
+        idleSection.style.display = 'none';
+      }
+      if (runningSection) {
+        runningSection.classList.remove('hidden');
+        runningSection.style.display = 'block';
+      }
+      if (takebackBtn) {
+        takebackBtn.disabled = false;
+        takebackBtn.textContent = 'Take back control';
+      }
+      if (handoverBtn) {
+        handoverBtn.textContent = 'Stop Agent';
+        handoverBtn.className = 'btn btn-danger';
+      }
     } else {
-      statusBadge.textContent = 'STOPPED';
-      statusBadge.className = 'badge badge-stopped';
-      toggleBtn.textContent = 'Start Agent';
-      toggleBtn.className = 'btn btn-primary';
+      if (statusBadge) {
+        statusBadge.textContent = 'STOPPED';
+        statusBadge.className = 'badge badge-stopped';
+      }
+      if (runningTaskCard) {
+        runningTaskCard.classList.add('hidden');
+        runningTaskCard.style.display = 'none';
+      }
+      if (idleSection) {
+        idleSection.classList.remove('hidden');
+        idleSection.style.display = 'block';
+      }
+      if (handoverBtn) {
+        handoverBtn.disabled = false;
+        handoverBtn.textContent = 'Hand over to agent';
+        handoverBtn.className = 'btn btn-primary handover-btn';
+      }
+      if (runningSection) {
+        runningSection.classList.add('hidden');
+        runningSection.style.display = 'none';
+      }
+      if (takebackBtn) {
+        takebackBtn.disabled = false;
+        takebackBtn.textContent = 'Take back control';
+      }
+    }
+  }
+
+  function updateUI(isRunning, lastStartedAt, lastStoppedAt, taskDescription = null) {
+    setAgentRunningUI(isRunning, taskDescription);
+    if (isRunning) {
+      const timeStr = lastStartedAt ? new Date(lastStartedAt).toLocaleTimeString() : 'now';
+      if (statusInfo) {
+        statusInfo.textContent = `Loop active since ${timeStr}`;
+      }
+    } else {
       const timeStr = lastStoppedAt ? ` (stopped at ${new Date(lastStoppedAt).toLocaleTimeString()})` : '';
-      statusInfo.textContent = `Agent is idle${timeStr}`;
+      if (statusInfo && (!statusInfo.textContent || statusInfo.textContent.startsWith('Loop active') || statusInfo.textContent.startsWith('Starting'))) {
+        statusInfo.textContent = `Agent is idle${timeStr}`;
+      }
     }
   }
 
   function fetchStatus() {
     chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
-      if (chrome.runtime.lastError) {
+      if (chrome.runtime?.lastError) {
         console.error('[Popup] Error getting status:', chrome.runtime.lastError.message);
-        statusInfo.textContent = 'Service worker disconnected';
+        if (statusInfo) statusInfo.textContent = 'Service worker disconnected';
+        setAgentRunningUI(false);
         return;
       }
       if (response && response.success && response.state) {
-        const { isRunning, lastStartedAt, lastStoppedAt } = response.state;
-        updateUI(isRunning, lastStartedAt, lastStoppedAt);
+        const { isRunning, lastStartedAt, lastStoppedAt, currentTask } = response.state;
+        updateUI(isRunning, lastStartedAt, lastStoppedAt, currentTask);
+      } else {
+        setAgentRunningUI(false);
       }
     });
   }
@@ -121,6 +188,8 @@ document.addEventListener('DOMContentLoaded', () => {
       entryClass += ' log-entry-done';
     } else if (ev === 'TASK_EXHAUSTED') {
       entryClass += ' log-entry-exhausted';
+    } else if (ev === 'TASK_STOPPED') {
+      entryClass += ' log-entry-stopped';
     } else if (ev === 'LOOP_ERROR' || item.error || item.level === 'error') {
       entryClass += ' log-entry-error';
     } else if (ev === 'STEP_STARTED') {
@@ -143,6 +212,8 @@ document.addEventListener('DOMContentLoaded', () => {
       text = item.reason ? `✓ Done — ${item.reason}` : (item.message || '✓ Done');
     } else if (ev === 'TASK_EXHAUSTED') {
       text = '⚠ Step limit reached';
+    } else if (ev === 'TASK_STOPPED') {
+      text = item.message || '⏹ Agent stopped — control returned to user';
     } else if (ev === 'LOOP_ERROR') {
       text = item.error ? `Error: ${item.error}` : (item.message || 'Error occurred');
     } else if (!text) {
@@ -214,69 +285,224 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  toggleBtn.addEventListener('click', () => {
-    toggleBtn.disabled = true;
-    const isStarting = !currentRunning;
-    const actionType = isStarting ? 'START_AGENT' : 'STOP_AGENT';
+  if (taskInput) {
+    taskInput.addEventListener('input', () => {
+      if (typeof chrome !== 'undefined' && chrome.storage?.session?.set) {
+        chrome.storage.session.set({ draftTask: taskInput.value });
+      }
+    });
+  }
 
-    // Optimistic UI — flip immediately for crisp feedback
-    if (isStarting) {
-      clearStatusLogUI();
-      updateUI(true, Date.now(), null);
-      statusInfo.textContent = 'Starting agent\u2026';
-    } else {
-      updateUI(false, null, Date.now());
-      statusInfo.textContent = 'Stopping agent\u2026';
+  // ── Handover to agent button handler ──
+  function handleHandover() {
+    if (handoverBtn) handoverBtn.disabled = true;
+    const task = taskInput?.value?.trim() || 'Describe what the agent should do…';
+
+    // Optimistically transition UI immediately
+    clearStatusLogUI();
+    setAgentRunningUI(true, task);
+    if (statusInfo) statusInfo.textContent = 'Starting loop…';
+
+    if (typeof chrome !== 'undefined' && chrome.storage?.session?.set) {
+      chrome.storage.session.set({
+        agentState: {
+          isRunning: true,
+          currentTask: task,
+          lastStartedAt: Date.now(),
+          stepCount: 0
+        },
+        agentStatusLog: []
+      });
     }
 
     resolveTargetTab((tabId) => {
-      const task = document.getElementById('taskInput')?.value?.trim() || 'Fill profile and submit form';
-      chrome.runtime.sendMessage({ type: actionType, tabId, task, async: true }, (response) => {
-        toggleBtn.disabled = false;
-        if (chrome.runtime.lastError) {
-          console.error('[Popup] Error toggling agent:', chrome.runtime.lastError.message);
-          statusInfo.textContent = 'Error: ' + chrome.runtime.lastError.message;
+      chrome.runtime.sendMessage({
+        type: 'START_AUTONOMOUS_LOOP',
+        tabId,
+        task,
+        async: true
+      }, (response) => {
+        if (handoverBtn) handoverBtn.disabled = false;
+        if (chrome.runtime?.lastError) {
+          console.error('[Popup] Error starting loop:', chrome.runtime.lastError.message);
+          setAgentRunningUI(false);
+          if (statusInfo) statusInfo.textContent = 'Error: ' + chrome.runtime.lastError.message;
+          appendStatusLogEntry({
+            event: 'LOOP_ERROR',
+            error: chrome.runtime.lastError.message
+          });
           fetchStatus();
           return;
         }
         if (response && response.success) {
-          // Confirmed by background — lock in the confirmed state without racing fetchStatus
-          const running = Boolean(response.isRunning ?? isStarting);
-          updateUI(running, isStarting ? Date.now() : null, !isStarting ? Date.now() : null);
-          statusInfo.textContent = running ? 'Loop active (running\u2026)' : 'Agent stopped';
+          if (statusInfo) statusInfo.textContent = 'Loop active (running…)';
         } else {
-          const err = (response && response.error) || 'Failed to toggle agent';
-          statusInfo.textContent = 'Error: ' + err;
+          const err = response?.error || 'Failed to start loop';
+          setAgentRunningUI(false);
+          if (statusInfo) statusInfo.textContent = 'Error: ' + err;
+          appendStatusLogEntry({
+            event: 'LOOP_ERROR',
+            error: err
+          });
           fetchStatus();
         }
       });
     });
-  });
+  }
+
+  // ── Take back control button handler ──
+  function handleTakeback() {
+    if (takebackBtn) {
+      takebackBtn.disabled = true;
+      takebackBtn.textContent = 'Taking back control…';
+    }
+    if (statusInfo) statusInfo.textContent = 'Stopping agent after current action…';
+
+    chrome.runtime.sendMessage({
+      type: 'STOP_AUTONOMOUS_LOOP'
+    }, (response) => {
+      if (chrome.runtime?.lastError) {
+        console.warn('[Popup] Error stopping loop:', chrome.runtime.lastError.message);
+      }
+      if (response && response.success && !response.isRunning) {
+        // Confirmed stopped by background
+      }
+    });
+  }
+
+  if (handoverBtn) {
+    handoverBtn.addEventListener('click', () => {
+      if (currentRunning) {
+        handleTakeback();
+      } else {
+        handleHandover();
+      }
+    });
+  }
+
+  if (takebackBtn) {
+    takebackBtn.addEventListener('click', () => {
+      handleTakeback();
+    });
+  }
+
+  // ── Session & Storage Restore ──
+  function restoreSessionState() {
+    function handleEvents(events) {
+      if (Array.isArray(events) && events.length > 0) {
+        clearStatusLogUI();
+        const empty = document.getElementById('logEmptyMsg');
+        if (empty) empty.remove();
+        for (const ev of events) {
+          appendStatusLogEntry(ev);
+        }
+      }
+    }
+
+    if (typeof chrome !== 'undefined' && chrome.storage?.session?.get) {
+      chrome.storage.session.get(['agentState', 'agentStatusLog', 'draftTask'], (data) => {
+        if (!chrome.runtime?.lastError && data?.draftTask && taskInput && !taskInput.value) {
+          taskInput.value = data.draftTask;
+        }
+
+        if (!chrome.runtime?.lastError && data?.agentState) {
+          const s = data.agentState;
+          if (s.isRunning) {
+            updateUI(true, s.lastStartedAt, null, s.currentTask);
+            const stepText = s.stepCount > 0 ? ' (step ' + s.stepCount + ')' : '';
+            if (statusInfo) statusInfo.textContent = 'Loop active' + stepText;
+          } else {
+            updateUI(false, null, s.lastStoppedAt, s.currentTask);
+            if (statusInfo) {
+              if (s.lastCompletionStatus === 'done') {
+                const reasonText = s.lastCompletionReason ? ': ' + s.lastCompletionReason : '';
+                statusInfo.textContent = 'Task done in ' + (s.stepCount || 1) + ' step(s)' + reasonText;
+              } else if (s.lastCompletionStatus === 'exhausted') {
+                statusInfo.textContent = 'Task stopped: reached maximum steps (' + (s.stepCount || 10) + ') without completion';
+              } else if (s.lastCompletionStatus === 'stopped') {
+                statusInfo.textContent = 'Control returned to user (stopped after ' + (s.stepCount || 0) + ' step(s))';
+              } else {
+                statusInfo.textContent = 'Agent is idle';
+              }
+            }
+          }
+        } else {
+          fetchStatus();
+        }
+
+        if (!chrome.runtime?.lastError && Array.isArray(data?.agentStatusLog) && data.agentStatusLog.length > 0) {
+          handleEvents(data.agentStatusLog);
+        } else {
+          fetchStatusLogViaMessage();
+        }
+      });
+    } else {
+      fetchStatus();
+      fetchStatusLogViaMessage();
+    }
+
+    function fetchStatusLogViaMessage() {
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ type: 'GET_STATUS_LOG' }, (res) => {
+          if (!chrome.runtime?.lastError && res && res.success && Array.isArray(res.log) && res.log.length > 0) {
+            handleEvents(res.log);
+          }
+        });
+      }
+    }
+  }
 
   // Reactive state sync whenever background writes agentState to storage
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'session' && changes.agentStatusLog) {
-        const newLog = changes.agentStatusLog.newValue;
-        if (Array.isArray(newLog) && newLog.length === 0) {
-          clearStatusLogUI();
+      if (area === 'session') {
+        if (changes.agentState) {
+          const state = changes.agentState.newValue;
+          if (state) {
+            updateUI(state.isRunning, state.lastStartedAt, state.lastStoppedAt, state.currentTask);
+            if (statusInfo) {
+              if (state.lastError) {
+                statusInfo.textContent = 'Error: ' + state.lastError;
+              } else if (state.isRunning) {
+                const stepText = state.stepCount > 0 ? ' (step ' + state.stepCount + ')' : '';
+                statusInfo.textContent = 'Loop active' + stepText;
+              } else if (state.lastCompletionStatus === 'done') {
+                const reasonText = state.lastCompletionReason ? ': ' + state.lastCompletionReason : '';
+                statusInfo.textContent = 'Task done in ' + (state.stepCount || 1) + ' step(s)' + reasonText;
+              } else if (state.lastCompletionStatus === 'exhausted') {
+                statusInfo.textContent = 'Task stopped: reached maximum steps (' + (state.stepCount || 10) + ') without completion';
+              } else if (state.lastCompletionStatus === 'stopped') {
+                statusInfo.textContent = 'Control returned to user (stopped after ' + (state.stepCount || 0) + ' step(s))';
+              }
+            }
+          }
+        }
+        if (changes.agentStatusLog) {
+          const newLog = changes.agentStatusLog.newValue;
+          if (Array.isArray(newLog) && newLog.length === 0) {
+            clearStatusLogUI();
+          }
         }
       }
       if (area === 'local') {
         if (changes.agentState) {
           const state = changes.agentState.newValue;
           if (state) {
-            updateUI(state.isRunning, state.lastStartedAt, state.lastStoppedAt);
-            if (state.lastError) {
-              statusInfo.textContent = 'Error: ' + state.lastError;
-            } else if (state.isRunning) {
-              const stepText = state.stepCount > 0 ? ' (step ' + state.stepCount + ')' : '';
-              statusInfo.textContent = 'Loop active' + stepText;
-            } else if (state.lastCompletionStatus === 'done') {
-              const reasonText = state.lastCompletionReason ? ': ' + state.lastCompletionReason : '';
-              statusInfo.textContent = 'Task done in ' + (state.stepCount || 1) + ' step(s)' + reasonText;
-            } else if (state.lastCompletionStatus === 'exhausted') {
-              statusInfo.textContent = 'Task stopped: reached maximum steps (' + (state.stepCount || 10) + ') without completion';
+            updateUI(state.isRunning, state.lastStartedAt, state.lastStoppedAt, state.currentTask);
+            if (statusInfo) {
+              if (state.lastError) {
+                statusInfo.textContent = 'Error: ' + state.lastError;
+              } else if (state.isRunning) {
+                const stepText = state.stepCount > 0 ? ' (step ' + state.stepCount + ')' : '';
+                statusInfo.textContent = 'Loop active' + stepText;
+              } else if (state.lastCompletionStatus === 'done') {
+                const reasonText = state.lastCompletionReason ? ': ' + state.lastCompletionReason : '';
+                statusInfo.textContent = 'Task done in ' + (state.stepCount || 1) + ' step(s)' + reasonText;
+              } else if (state.lastCompletionStatus === 'exhausted') {
+                statusInfo.textContent = 'Task stopped: reached maximum steps (' + (state.stepCount || 10) + ') without completion';
+              } else if (state.lastCompletionStatus === 'stopped') {
+                statusInfo.textContent = 'Control returned to user (stopped after ' + (state.stepCount || 0) + ' step(s))';
+              }
             }
           }
         }
@@ -287,7 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Listen for task completion, exhaustion, and live agent status runtime messages
+  // Listen for task completion, exhaustion, stopped, and live agent status runtime messages
   if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message) => {
       if (!message || typeof message !== 'object') return;
@@ -297,13 +523,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         appendStatusLogEntry(message);
       } else if (message.type === 'TASK_DONE') {
-        updateUI(false, null, Date.now());
+        setAgentRunningUI(false);
         const reasonText = message.reason ? `: ${message.reason}` : '';
-        statusInfo.textContent = `Task done in ${message.stepCount ?? message.steps ?? 1} step(s)${reasonText}`;
+        const steps = message.stepCount ?? message.steps ?? 1;
+        if (statusInfo) statusInfo.textContent = `Task done in ${steps} step(s)${reasonText}`;
       } else if (message.type === 'TASK_EXHAUSTED') {
-        updateUI(false, null, Date.now());
+        setAgentRunningUI(false);
         const max = message.maxSteps ?? message.stepCount ?? message.steps ?? 10;
-        statusInfo.textContent = `Task stopped: reached maximum steps (${max}) without completion`;
+        if (statusInfo) statusInfo.textContent = `Task stopped: reached maximum steps (${max}) without completion`;
+      } else if (message.type === 'TASK_STOPPED') {
+        setAgentRunningUI(false);
+        const steps = message.stepCount ?? message.steps ?? 0;
+        if (statusInfo) statusInfo.textContent = `Control returned to user (stopped after ${steps} step(s))`;
       }
     });
   }
@@ -742,12 +973,19 @@ document.addEventListener('DOMContentLoaded', () => {
       clearStatusLogUI,
       restoreStatusLog
     };
+    window.HandoverUX = {
+      setAgentRunningUI,
+      updateUI,
+      fetchStatus,
+      restoreSessionState,
+      handleHandover,
+      handleTakeback
+    };
   }
 
   // ── Initial loads ────────────────────────────────────────────────────────
-  fetchStatus();
+  restoreSessionState();
   fetchRuntimeStatus();
   fetchHighlightStatus();
   refreshSecrets();
-  restoreStatusLog();
 });
