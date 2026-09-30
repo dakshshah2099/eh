@@ -1,0 +1,116 @@
+{
+  "version": "1.0.0",
+  "name": "Privacy Lens Per-Class Recall Evaluation Corpus",
+  "description": "Corpus of real-world web pages with ground truth annotations covering face, password, email, and text PII",
+  "classes": ["face", "password", "email", "text_pii"],
+  "pages": [
+    {
+      "id": "01-saas-login",
+      "name": "CloudSaaS Workspace Login",
+      "description": "Enterprise cloud login portal with email and password fields",
+      "liveUrl": "https://auth0.com/login",
+      "snapshot": "snapshots/01-saas-login.html",
+      "annotations": "annotations/01-saas-login.json",
+      "classes": ["password", "email"]
+    },
+    {
+      "id": "02-user-profile",
+      "name": "User Profile & Security Settings",
+      "description": "Account management dashboard with avatar face, full name, email, and current password",
+      "liveUrl": "https://github.com/settings/profile",
+      "snapshot": "snapshots/02-user-profile.html",
+      "annotations": "annotations/02-user-profile.json",
+      "classes": ["face", "text_pii", "email", "password"]
+    },
+    {
+      "id": "03-team-directory",
+      "name": "Clinical Research Staff Directory",
+      "description": "Multi-member healthcare directory with 2 biometric portrait faces, personal names, and official emails",
+      "liveUrl": "https://www.mayoclinic.org/about-mayo-clinic/leadership",
+      "snapshot": "snapshots/03-team-directory.html",
+      "annotations": "annotations/03-team-directory.json",
+      "classes": ["face", "text_pii", "email"]
+    },
+    {
+      "id": "04-ecommerce-checkout",
+      "name": "Express Checkout & Account Creation",
+      "description": "Retail checkout with customer full name, receipt email, and account creation password",
+      "liveUrl": "https://store.google.com/checkout",
+      "snapshot": "snapshots/04-ecommerce-checkout.html",
+      "annotations": "annotations/04-ecommerce-checkout.json",
+      "classes": ["text_pii", "email", "password"]
+    },
+    {
+      "id": "05-social-author-bio",
+      "name": "Contributing Author Profile - TechJournal",
+      "description": "Journal article author card with portrait face, author name, and contact email",
+      "liveUrl": "https://medium.com/@author",
+      "snapshot": "snapshots/05-social-author-bio.html",
+      "annotations": "annotations/05-social-author-bio.json",
+      "classes": ["face", "text_pii", "email"]
+    },
+    {
+      "id": "06-password-reset",
+      "name": "Reset Security Credentials - FinTech Vault",
+      "description": "Financial service credential reset form with registered email and dual new password fields",
+      "liveUrl": "https://chase.com/password-reset",
+      "snapshot": "snapshots/06-password-reset.html",
+      "annotations": "annotations/06-password-reset.json",
+      "classes": ["password", "email"]
+    },
+    {
+      "id": "07-employee-badge",
+      "name": "Enterprise Security Access Badge",
+      "description": "Security identification badge with employee photo, full legal name, and agency email",
+      "liveUrl": "https://www.defense.gov/identity",
+      "snapshot": "snapshots/07-employee-badge.html",
+      "annotations": "annotations/07-employee-badge.json",
+      "classes": ["face", "text_pii", "email"]
+    },
+    {
+      "id": "08-contact-support",
+      "name": "Customer Technical Support Request",
+      "description": "Help desk service ticket with customer full name, contact email, and support inquiry",
+      "liveUrl": "https://support.apple.com/contact",
+      "snapshot": "snapshots/08-contact-support.html",
+      "annotations": "annotations/08-contact-support.json",
+      "classes": ["text_pii", "email"]
+    },
+    {
+      "id": "09-account-security",
+      "name": "Account Security & Credential Vault",
+      "description": "Security credential configuration with existing password, new password, and recovery email",
+      "liveUrl": "https://accounts.google.com/security",
+      "snapshot": "snapshots/09-account-security.html",
+      "annotations": "annotations/09-account-security.json",
+      "classes": ["password", "email"]
+    },
+    {
+      "id": "10-community-forum",
+      "name": "Developer Community Member Profile",
+      "description": "Open source forum member card with user avatar face, legal identity name, and community email",
+      "liveUrl": "https://news.ycombinator.com/user",
+      "snapshot": "snapshots/10-community-forum.html",
+      "annotations": "annotations/10-community-forum.json",
+      "classes": ["face", "text_pii", "email"]
+    },
+    {
+      "id": "11-executive-board",
+      "name": "Executive Leadership - Holdings Corp",
+      "description": "Corporate board member showcase with executive portrait face, full name, and executive email",
+      "liveUrl": "https://investor.apple.com/leadership",
+      "snapshot": "snapshots/11-executive-board.html",
+      "annotations": "annotations/11-executive-board.json",
+      "classes": ["face", "text_pii", "email"]
+    },
+    {
+      "id": "12-banking-registration",
+      "name": "Online Banking Account Registration",
+      "description": "Personal banking enrollment portal with applicant legal name, verified email, and password",
+      "liveUrl": "https://www.bankofamerica.com/enroll",
+      "snapshot": "snapshots/12-banking-registration.html",
+      "annotations": "annotations/12-banking-registration.json",
+      "classes": ["text_pii", "email", "password"]
+    }
+  ]
+}

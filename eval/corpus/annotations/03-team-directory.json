@@ -1,0 +1,48 @@
+{
+  "pageId": "03-team-directory",
+  "title": "Clinical Research Staff Directory",
+  "classes": ["face", "text_pii", "email"],
+  "annotations": [
+    {
+      "id": "staff-avatar-1",
+      "type": "face",
+      "selector": "#avatar1",
+      "description": "Dr. Marcus Vance portrait headshot"
+    },
+    {
+      "id": "staff-name-1",
+      "type": "text_pii",
+      "selector": "#name1",
+      "description": "Staff member Marcus Vance name heading"
+    },
+    {
+      "id": "staff-email-1",
+      "type": "email",
+      "selector": "#email1",
+      "description": "Staff member Marcus Vance email mailto link"
+    },
+    {
+      "id": "staff-avatar-2",
+      "type": "face",
+      "selector": "#avatar2",
+      "description": "Elena Rostova portrait headshot"
+    },
+    {
+      "id": "staff-name-2",
+      "type": "text_pii",
+      "selector": "#name2",
+      "description": "Staff member Elena Rostova name heading"
+    },
+    {
+      "id": "staff-email-2",
+      "type": "email",
+      "selector": "#email2",
+      "description": "Staff member Elena Rostova email mailto link"
+    }
+  ],
+  "negativeSelectors": [
+    ".header-section h1",
+    "#staffCard1 .role",
+    "#staffCard2 .role"
+  ]
+}

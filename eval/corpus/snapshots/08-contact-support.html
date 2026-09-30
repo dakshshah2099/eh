@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Customer Technical Support Request</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; margin: 0; padding: 40px; display: flex; justify-content: center; }
+    .form-box { max-width: 540px; width: 100%; background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    h1 { font-size: 22px; color: #0f172a; margin: 0 0 6px 0; }
+    p.sub { font-size: 14px; color: #64748b; margin: 0 0 24px 0; }
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px; }
+    input[type="text"], input[type="email"], textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+    textarea { height: 100px; resize: vertical; }
+    .btn-submit { background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="form-box">
+    <h1>Technical Support Ticket</h1>
+    <p class="sub">Please provide your details so our team can diagnose your issue.</p>
+    <form id="supportTicketForm" onsubmit="return false;">
+      <div class="form-group">
+        <label for="senderName">Your Full Name</label>
+        <input type="text" id="senderName" name="full_name" autocomplete="name" placeholder="Full legal name" value="Christopher Nolan" required>
+      </div>
+      <div class="form-group">
+        <label for="senderEmail">Contact Email Address</label>
+        <input type="email" id="senderEmail" name="email" autocomplete="email" placeholder="email@domain.com" value="c.nolan@cinemamail.org" required>
+      </div>
+      <div class="form-group">
+        <label for="ticketSubject">Issue Subject</label>
+        <input type="text" id="ticketSubject" name="subject" value="Audio latency synchronization glitch on timeline render">
+      </div>
+      <div class="form-group">
+        <label for="ticketMessage">Description of Error</label>
+        <textarea id="ticketMessage" name="message">Timeline audio playback drops frame sync after 45 minutes of continuous buffer playback.</textarea>
+      </div>
+      <button type="submit" id="btnSubmitTicket" class="btn-submit">Dispatch Support Ticket</button>
+    </form>
+  </div>
+</body>
+</html>

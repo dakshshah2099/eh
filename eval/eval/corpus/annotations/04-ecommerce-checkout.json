@@ -1,0 +1,30 @@
+{
+  "pageId": "04-ecommerce-checkout",
+  "title": "Express Checkout & Account Creation",
+  "classes": ["text_pii", "email", "password"],
+  "annotations": [
+    {
+      "id": "checkout-customer-name",
+      "type": "text_pii",
+      "selector": "#customerName",
+      "description": "Customer full name input"
+    },
+    {
+      "id": "checkout-customer-email",
+      "type": "email",
+      "selector": "#customerEmail",
+      "description": "Customer email receipt input"
+    },
+    {
+      "id": "checkout-account-password",
+      "type": "password",
+      "selector": "#newAccountPassword",
+      "description": "New account creation password input"
+    }
+  ],
+  "negativeSelectors": [
+    "#btnPlaceOrder",
+    "#orderTotal",
+    "h1"
+  ]
+}

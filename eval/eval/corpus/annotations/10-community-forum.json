@@ -1,0 +1,29 @@
+{
+  "pageId": "10-community-forum",
+  "title": "Developer Community Member Profile",
+  "classes": ["face", "text_pii", "email"],
+  "annotations": [
+    {
+      "id": "forum-user-face",
+      "type": "face",
+      "selector": "#forumUserAvatar",
+      "description": "Forum member facial avatar"
+    },
+    {
+      "id": "forum-user-name",
+      "type": "text_pii",
+      "selector": "#forumUserName",
+      "description": "Forum member real name heading"
+    },
+    {
+      "id": "forum-user-email",
+      "type": "email",
+      "selector": "#forumUserEmail",
+      "description": "Forum member public contact email"
+    }
+  ],
+  "negativeSelectors": [
+    ".handle",
+    ".stats-row"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "pageId": "12-banking-registration",
+  "title": "Online Banking Account Registration",
+  "classes": ["text_pii", "email", "password"],
+  "annotations": [
+    {
+      "id": "banking-applicant-name",
+      "type": "text_pii",
+      "selector": "#applicantName",
+      "description": "Applicant full legal name input"
+    },
+    {
+      "id": "banking-applicant-email",
+      "type": "email",
+      "selector": "#applicantEmail",
+      "description": "Applicant primary banking email"
+    },
+    {
+      "id": "banking-account-password",
+      "type": "password",
+      "selector": "#accessPassword",
+      "description": "Banking online access password"
+    }
+  ],
+  "negativeSelectors": [
+    "#btnEnroll",
+    "h1"
+  ]
+}

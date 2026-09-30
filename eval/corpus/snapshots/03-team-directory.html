@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Clinical Research Staff Directory</title>
+  <script type="application/ld+json">
+  [
+    {
+      "@context": "https://schema.org",
+      "@type": "Person",
+      "name": "Marcus Vance",
+      "email": "m.vance@biohealth.org"
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "Person",
+      "name": "Elena Rostova",
+      "email": "elena.rostova@biohealth.org"
+    }
+  ]
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; margin: 0; padding: 40px; }
+    .header-section { max-width: 900px; margin: 0 auto 30px auto; }
+    h1 { font-size: 26px; color: #18181b; margin-bottom: 8px; }
+    p.lead { color: #71717a; margin: 0; }
+    .grid { max-width: 900px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .card { background: white; border: 1px solid #e4e4e7; border-radius: 12px; padding: 24px; display: flex; gap: 20px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .avatar-box { width: 90px; height: 90px; border-radius: 50%; overflow: hidden; border: 2px solid #e4e4e7; flex-shrink: 0; }
+    .avatar-box img { width: 100%; height: 100%; object-fit: cover; }
+    .info h2 { font-size: 18px; margin: 0 0 4px 0; color: #09090b; }
+    .info .role { font-size: 13px; color: #71717a; margin: 0 0 10px 0; }
+    .info .email-link { font-size: 13px; color: #2563eb; text-decoration: none; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="header-section">
+    <h1>Clinical Research Staff Directory</h1>
+    <p class="lead">Connect with our principal investigators and laboratory specialists.</p>
+  </div>
+  <div class="grid">
+    <div class="card" id="staffCard1">
+      <div class="avatar-box">
+        <img id="avatar1" class="member-avatar" src="../assets/face.svg" data-pii-type="face" alt="Dr. Marcus Vance Headshot" width="90" height="90">
+      </div>
+      <div class="info">
+        <h2 id="name1" class="staff-name">Marcus Vance</h2>
+        <p class="role">Chief Medical Geneticist</p>
+        <a id="email1" class="email-link" href="mailto:m.vance@biohealth.org">m.vance@biohealth.org</a>
+      </div>
+    </div>
+    <div class="card" id="staffCard2">
+      <div class="avatar-box">
+        <img id="avatar2" class="member-avatar" src="../assets/face.svg" data-pii-type="face" alt="Elena Rostova Headshot" width="90" height="90">
+      </div>
+      <div class="info">
+        <h2 id="name2" class="staff-name">Elena Rostova</h2>
+        <p class="role">Lead Bioinformatics Fellow</p>
+        <a id="email2" class="email-link" href="mailto:elena.rostova@biohealth.org">elena.rostova@biohealth.org</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

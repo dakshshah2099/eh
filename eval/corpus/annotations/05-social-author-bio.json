@@ -1,0 +1,29 @@
+{
+  "pageId": "05-social-author-bio",
+  "title": "Contributing Author Profile - TechJournal",
+  "classes": ["face", "text_pii", "email"],
+  "annotations": [
+    {
+      "id": "author-face-photo",
+      "type": "face",
+      "selector": "#authorPhoto",
+      "description": "Contributing author portrait photo"
+    },
+    {
+      "id": "author-display-name",
+      "type": "text_pii",
+      "selector": "#authorName",
+      "description": "Contributing author full name heading"
+    },
+    {
+      "id": "author-contact-email",
+      "type": "email",
+      "selector": "#authorEmail",
+      "description": "Author direct email contact link"
+    }
+  ],
+  "negativeSelectors": [
+    ".recent-posts h3",
+    ".bio-text"
+  ]
+}

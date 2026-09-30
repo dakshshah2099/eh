@@ -1,0 +1,29 @@
+{
+  "pageId": "09-account-security",
+  "title": "Account Security & Credential Vault",
+  "classes": ["password", "email"],
+  "annotations": [
+    {
+      "id": "security-old-password",
+      "type": "password",
+      "selector": "#oldMasterPassword",
+      "description": "Existing account master password field"
+    },
+    {
+      "id": "security-new-password",
+      "type": "password",
+      "selector": "#newMasterPassword",
+      "description": "New account master passphrase input"
+    },
+    {
+      "id": "security-recovery-email",
+      "type": "email",
+      "selector": "#backupRecoveryEmail",
+      "description": "Backup 2FA security recovery email"
+    }
+  ],
+  "negativeSelectors": [
+    "#btnUpdateSecurity",
+    "h1"
+  ]
+}

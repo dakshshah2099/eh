@@ -400,9 +400,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (typeof chrome !== 'undefined' && chrome.storage?.session?.get) {
-      chrome.storage.session.get(['agentState', 'agentStatusLog', 'draftTask'], (data) => {
+      chrome.storage.session.get(['agentState', 'agentStatusLog', 'draftTask', 'pendingConfirmation'], (data) => {
         if (!chrome.runtime?.lastError && data?.draftTask && taskInput && !taskInput.value) {
           taskInput.value = data.draftTask;
+        }
+
+        if (!chrome.runtime?.lastError && data?.pendingConfirmation) {
+          showConfirmModal(data.pendingConfirmation);
+        } else {
+          hideConfirmModal();
         }
 
         if (!chrome.runtime?.lastError && data?.agentState) {
@@ -532,10 +538,56 @@ document.addEventListener('DOMContentLoaded', () => {
         const max = message.maxSteps ?? message.stepCount ?? message.steps ?? 10;
         if (statusInfo) statusInfo.textContent = `Task stopped: reached maximum steps (${max}) without completion`;
       } else if (message.type === 'TASK_STOPPED') {
+        hideConfirmModal();
         setAgentRunningUI(false);
         const steps = message.stepCount ?? message.steps ?? 0;
         if (statusInfo) statusInfo.textContent = `Control returned to user (stopped after ${steps} step(s))`;
+      } else if (message.type === 'CONFIRM_ACTION_REQUIRED') {
+        showConfirmModal(message);
       }
+    });
+  }
+
+  // ── Risky Action Confirmation Modal (Ticket 06) ──
+  const confirmModalOverlay = document.getElementById('confirmModalOverlay');
+  const confirmSummary      = document.getElementById('confirmSummary');
+  const confirmActionType   = document.getElementById('confirmActionType');
+  const confirmActionTarget = document.getElementById('confirmActionTarget');
+  const confirmAllowBtn     = document.getElementById('confirmAllowBtn');
+  const confirmStopBtn      = document.getElementById('confirmStopBtn');
+
+  function showConfirmModal(data) {
+    if (!confirmModalOverlay) return;
+    if (confirmSummary) {
+      confirmSummary.textContent = data.summary || 'The agent is about to execute a high-risk action.';
+    }
+    if (confirmActionType) {
+      confirmActionType.textContent = data.actionType || (data.action?.type) || 'action';
+    }
+    if (confirmActionTarget) {
+      confirmActionTarget.textContent = data.target || 'page';
+    }
+    confirmModalOverlay.classList.remove('hidden');
+    confirmModalOverlay.style.display = 'flex';
+  }
+
+  function hideConfirmModal() {
+    if (!confirmModalOverlay) return;
+    confirmModalOverlay.classList.add('hidden');
+    confirmModalOverlay.style.display = 'none';
+  }
+
+  if (confirmAllowBtn) {
+    confirmAllowBtn.addEventListener('click', () => {
+      hideConfirmModal();
+      chrome.runtime.sendMessage({ type: 'CONFIRM_ACTION_APPROVED' });
+    });
+  }
+
+  if (confirmStopBtn) {
+    confirmStopBtn.addEventListener('click', () => {
+      hideConfirmModal();
+      chrome.runtime.sendMessage({ type: 'CONFIRM_ACTION_REJECTED' });
     });
   }
 

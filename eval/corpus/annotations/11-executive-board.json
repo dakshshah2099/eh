@@ -1,0 +1,30 @@
+{
+  "pageId": "11-executive-board",
+  "title": "Executive Leadership - Holdings Corp",
+  "classes": ["face", "text_pii", "email"],
+  "annotations": [
+    {
+      "id": "exec-ceo-face",
+      "type": "face",
+      "selector": "#ceoPhoto",
+      "description": "Chief Executive Officer portrait face"
+    },
+    {
+      "id": "exec-ceo-name",
+      "type": "text_pii",
+      "selector": "#ceoName",
+      "description": "Chief Executive Officer full name heading"
+    },
+    {
+      "id": "exec-ceo-email",
+      "type": "email",
+      "selector": "#ceoEmail",
+      "description": "Corporate executive email address link"
+    }
+  ],
+  "negativeSelectors": [
+    ".title",
+    ".bio",
+    "h1"
+  ]
+}

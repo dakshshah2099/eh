@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Enterprise Security Access Badge</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Person",
+    "name": "Rachel Adams",
+    "email": "rachel.adams@defense-contractor.gov"
+  }
+  </script>
+  <style>
+    body { font-family: -apple-system, sans-serif; background: #e2e8f0; margin: 0; padding: 40px; display: flex; justify-content: center; }
+    .badge { width: 320px; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.15); border: 2px solid #cbd5e1; }
+    .badge-top { background: #0f172a; color: white; padding: 16px; text-align: center; }
+    .badge-top h1 { font-size: 14px; text-transform: uppercase; letter-spacing: 1.5px; margin: 0; }
+    .badge-body { padding: 24px; text-align: center; }
+    .photo-container { width: 120px; height: 120px; margin: 0 auto 16px auto; border-radius: 12px; overflow: hidden; border: 3px solid #0f172a; }
+    .photo-container img { width: 100%; height: 100%; object-fit: cover; }
+    h2 { font-size: 20px; margin: 0 0 4px 0; color: #0f172a; }
+    .designation { font-size: 12px; font-weight: 600; color: #2563eb; text-transform: uppercase; margin: 0 0 12px 0; }
+    .info-row { font-size: 12px; color: #64748b; margin-bottom: 6px; }
+    .badge-footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 12px; text-align: center; font-size: 11px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="badge" id="securityBadge">
+    <div class="badge-top">
+      <h1>Department Security Clearance</h1>
+    </div>
+    <div class="badge-body">
+      <div class="photo-container" id="photoWrapper">
+        <img id="badgePhoto" class="id-avatar" src="../assets/face.svg" data-pii-type="face" alt="Rachel Adams Security Portrait" width="120" height="120">
+      </div>
+      <h2 id="badgeEmployeeName" itemprop="name">Rachel Adams</h2>
+      <p class="designation">Level 4 Cryptographic Analyst</p>
+      <div class="info-row">Official: <span id="badgeEmail">rachel.adams@defense-contractor.gov</span></div>
+      <div class="info-row">Badge ID: #CYBER-8849-SEC</div>
+    </div>
+    <div class="badge-footer">Property of Federal Systems • Non-transferable</div>
+  </div>
+</body>
+</html>

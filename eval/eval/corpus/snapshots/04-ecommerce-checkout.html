@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Express Checkout & Account Creation</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #fdfdfd; margin: 0; padding: 30px; }
+    .checkout-box { max-width: 600px; margin: 0 auto; background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 30px; }
+    h1 { font-size: 22px; color: #111827; margin: 0 0 20px 0; border-bottom: 2px solid #f3f4f6; padding-bottom: 12px; }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 4px; }
+    input { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+    .cart-summary { background: #f9fafb; padding: 16px; border-radius: 6px; margin: 20px 0; }
+    .cart-item { display: flex; justify-content: space-between; font-size: 14px; color: #4b5563; margin-bottom: 6px; }
+    .cart-total { display: flex; justify-content: space-between; font-weight: 700; color: #111827; border-top: 1px solid #e5e7eb; padding-top: 8px; }
+    .btn-pay { width: 100%; background: #0284c7; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="checkout-box">
+    <h1>Express Order Checkout</h1>
+    <form id="checkoutForm" onsubmit="return false;">
+      <div class="form-group">
+        <label for="customerName">Full Name</label>
+        <input type="text" id="customerName" name="full_name" autocomplete="name" placeholder="First and last name" value="Alexander Wright" required>
+      </div>
+      <div class="form-group">
+        <label for="customerEmail">Receipt Email Address</label>
+        <input type="email" id="customerEmail" name="email" autocomplete="email" placeholder="you@domain.com" value="alex.wright@shoppingmail.net" required>
+      </div>
+      <div class="form-group">
+        <label for="newAccountPassword">Create Account Password</label>
+        <input type="password" id="newAccountPassword" name="password" placeholder="Choose a password" value="MyCheckoutPass2026!" required>
+      </div>
+      <div class="cart-summary">
+        <div class="cart-item"><span>Wireless Ergonomic Keyboard</span><span>$79.00</span></div>
+        <div class="cart-item"><span>Ground Shipping</span><span>$0.00</span></div>
+        <div class="cart-total"><span>Total Due</span><span id="orderTotal">$79.00</span></div>
+      </div>
+      <button type="submit" id="btnPlaceOrder" class="btn-pay">Complete Purchase & Create Account</button>
+    </form>
+  </div>
+</body>
+</html>

@@ -43,8 +43,9 @@ export const RISK_TIERS = {
  * Patterns representing sensitive/high-risk actions.
  */
 export const HIGH_RISK_PATTERNS = {
+  submit: /(?:submit|submit[\s_-]?(?:form|order|payment|application|data))/i,
+  delete: /(?:delete|destroy|purge|erase|wipe|discard|trash|remove[\s_-]?(?:account|user|card|item|all)?|cancel[\s_-]?(?:account|subscription|membership|order|service|plan)?|close[\s_-]?account|terminate[\s_-]?(?:account|session)?|deactivate[\s_-]?account|logout|log[\s_-]?out|sign[\s_-]?out)/i,
   payment: /(?:payment|checkout|place[\s_-]?order|buy(?:[\s_-]?now)?|subscribe|subscription|charge|billing|invoice|transaction|credit[\s_-]?card|debit[\s_-]?card|card[\s_-]?number|cvv|cvc|security[\s_-]?code|submit[\s_-]?payment|complete[\s_-]?order|complete[\s_-]?purchase|wire[\s_-]?transfer|pay(?:\b|[\s_.-]|$))/i,
-  delete: /(?:delete|destroy|purge|erase|wipe|discard|trash|remove[\s_-]?(?:account|user|card|item|all)?|cancel[\s_-]?(?:account|subscription|membership|order|service|plan)|close[\s_-]?account|terminate[\s_-]?account|deactivate[\s_-]?account)/i,
   send: /(?:(?:^|[\s_.-])send(?:[\s_.-]|$)|send[\s_-]?(?:message|email|mail|dm|chat|sms|funds|money)|submit[\s_-]?(?:message|post)|post[\s_-]?(?:comment|reply|tweet)|tweet|publish|dispatch)/i,
   change_password: /(?:(?:change|update|reset|modify|new|set)[\s_-]?(?:password|passwd|credentials|secret)|security[\s_-]?settings|two[\s_-]?factor|2fa|mfa)/i
 };
@@ -178,10 +179,36 @@ export function classifyActionRisk(action, context = {}) {
     candidateTexts.push(cleanText(taskStr));
   }
 
-  // Check candidate texts against high-risk patterns
   let isHighRisk = false;
   let matchCategory = null;
   let matchText = null;
+
+  // Check direct action type
+  if (type === 'submit') {
+    isHighRisk = true;
+    matchCategory = 'submit';
+    matchText = 'action type: submit';
+  }
+
+  // Check navigate across origins: risky if cross-origin or navigating to new domain
+  if (type === 'navigate' && (action.url || action.target_url)) {
+    const navUrl = action.url || action.target_url;
+    const currentOrigin = context?.currentOrigin || context?.origin || '';
+    if (currentOrigin && typeof URL !== 'undefined') {
+      try {
+        const parsed = new URL(navUrl, currentOrigin);
+        if (parsed.origin !== currentOrigin) {
+          isHighRisk = true;
+          matchCategory = 'navigate';
+          matchText = `cross-origin navigation to ${parsed.origin}`;
+        }
+      } catch (_) {}
+    } else if (context?.isCrossOrigin) {
+      isHighRisk = true;
+      matchCategory = 'navigate';
+      matchText = `cross-origin navigation to ${navUrl}`;
+    }
+  }
 
   for (const text of candidateTexts) {
     if (!text) continue;

@@ -1,0 +1,13 @@
+{
+  "name": "privacy-lens",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "eval": "node eval/run_eval.js",
+    "eval:recall": "node eval/run_eval.js",
+    "eval:demo": "node eval/run_redaction_eval.js",
+    "eval:live": "node eval/run_eval.js --live",
+    "test": "node eval/run_eval.js"
+  }
+}

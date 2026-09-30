@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-09-30T10:37:21.138Z",
-  "durationMs": 4727,
+  "timestamp": "2026-09-30T09:42:27.265Z",
+  "durationMs": 2585,
   "threshold": 0.85,
   "passed": true,
   "summary": {
@@ -59,7 +59,7 @@
     {
       "id": "01-saas-login",
       "name": "CloudSaaS Workspace Login",
-      "url": "http://127.0.0.1:38277/snapshots/01-saas-login.html",
+      "url": "http://127.0.0.1:12423/snapshots/01-saas-login.html",
       "urlType": "snapshot",
       "totalGroundTruth": 2,
       "truePositives": 2,
@@ -118,7 +118,7 @@
     {
       "id": "02-user-profile",
       "name": "User Profile & Security Settings",
-      "url": "http://127.0.0.1:38277/snapshots/02-user-profile.html",
+      "url": "http://127.0.0.1:12423/snapshots/02-user-profile.html",
       "urlType": "snapshot",
       "totalGroundTruth": 4,
       "truePositives": 4,
@@ -220,7 +220,7 @@
     {
       "id": "03-team-directory",
       "name": "Clinical Research Staff Directory",
-      "url": "http://127.0.0.1:38277/snapshots/03-team-directory.html",
+      "url": "http://127.0.0.1:12423/snapshots/03-team-directory.html",
       "urlType": "snapshot",
       "totalGroundTruth": 6,
       "truePositives": 6,
@@ -343,7 +343,7 @@
     {
       "id": "04-ecommerce-checkout",
       "name": "Express Checkout & Account Creation",
-      "url": "http://127.0.0.1:38277/snapshots/04-ecommerce-checkout.html",
+      "url": "http://127.0.0.1:12423/snapshots/04-ecommerce-checkout.html",
       "urlType": "snapshot",
       "totalGroundTruth": 3,
       "truePositives": 3,
@@ -406,7 +406,7 @@
     {
       "id": "05-social-author-bio",
       "name": "Contributing Author Profile - TechJournal",
-      "url": "http://127.0.0.1:38277/snapshots/05-social-author-bio.html",
+      "url": "http://127.0.0.1:12423/snapshots/05-social-author-bio.html",
       "urlType": "snapshot",
       "totalGroundTruth": 3,
       "truePositives": 3,
@@ -469,7 +469,7 @@
     {
       "id": "06-password-reset",
       "name": "Reset Security Credentials - FinTech Vault",
-      "url": "http://127.0.0.1:38277/snapshots/06-password-reset.html",
+      "url": "http://127.0.0.1:12423/snapshots/06-password-reset.html",
       "urlType": "snapshot",
       "totalGroundTruth": 3,
       "truePositives": 3,
@@ -544,7 +544,7 @@
     {
       "id": "07-employee-badge",
       "name": "Enterprise Security Access Badge",
-      "url": "http://127.0.0.1:38277/snapshots/07-employee-badge.html",
+      "url": "http://127.0.0.1:12423/snapshots/07-employee-badge.html",
       "urlType": "snapshot",
       "totalGroundTruth": 3,
       "truePositives": 3,
@@ -619,7 +619,7 @@
     {
       "id": "08-contact-support",
       "name": "Customer Technical Support Request",
-      "url": "http://127.0.0.1:38277/snapshots/08-contact-support.html",
+      "url": "http://127.0.0.1:12423/snapshots/08-contact-support.html",
       "urlType": "snapshot",
       "totalGroundTruth": 2,
       "truePositives": 2,
@@ -666,7 +666,7 @@
     {
       "id": "09-account-security",
       "name": "Account Security & Credential Vault",
-      "url": "http://127.0.0.1:38277/snapshots/09-account-security.html",
+      "url": "http://127.0.0.1:12423/snapshots/09-account-security.html",
       "urlType": "snapshot",
       "totalGroundTruth": 3,
       "truePositives": 3,
@@ -729,7 +729,7 @@
     {
       "id": "10-community-forum",
       "name": "Developer Community Member Profile",
-      "url": "http://127.0.0.1:38277/snapshots/10-community-forum.html",
+      "url": "http://127.0.0.1:12423/snapshots/10-community-forum.html",
       "urlType": "snapshot",
       "totalGroundTruth": 3,
       "truePositives": 3,
@@ -792,7 +792,7 @@
     {
       "id": "11-executive-board",
       "name": "Executive Leadership - Holdings Corp",
-      "url": "http://127.0.0.1:38277/snapshots/11-executive-board.html",
+      "url": "http://127.0.0.1:12423/snapshots/11-executive-board.html",
       "urlType": "snapshot",
       "totalGroundTruth": 3,
       "truePositives": 3,
@@ -855,7 +855,7 @@
     {
       "id": "12-banking-registration",
       "name": "Online Banking Account Registration",
-      "url": "http://127.0.0.1:38277/snapshots/12-banking-registration.html",
+      "url": "http://127.0.0.1:12423/snapshots/12-banking-registration.html",
       "urlType": "snapshot",
       "totalGroundTruth": 3,
       "truePositives": 3,

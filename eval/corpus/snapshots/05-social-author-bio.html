@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Contributing Author Profile - TechJournal</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Person",
+    "name": "Sophia Montgomery",
+    "email": "sophia.montgomery@techjournal.io",
+    "jobTitle": "Lead Systems Architect"
+  }
+  </script>
+  <style>
+    body { font-family: Georgia, Cambria, serif; background: #ffffff; color: #222; margin: 0; padding: 40px; }
+    .author-card { max-width: 640px; margin: 0 auto; border: 1px solid #eaeaea; border-radius: 8px; padding: 32px; background: #fafafa; }
+    .profile-top { display: flex; align-items: center; gap: 24px; margin-bottom: 20px; }
+    .avatar-wrapper { width: 96px; height: 96px; border-radius: 50%; overflow: hidden; border: 2px solid #ddd; }
+    .avatar-wrapper img { width: 100%; height: 100%; object-fit: cover; }
+    .author-meta h2 { font-family: -apple-system, sans-serif; font-size: 22px; margin: 0 0 6px 0; color: #111; }
+    .author-meta .title { font-size: 14px; color: #666; margin: 0 0 8px 0; font-family: -apple-system, sans-serif; }
+    .author-meta .email { font-family: -apple-system, sans-serif; font-size: 13px; color: #1d4ed8; text-decoration: none; }
+    .bio-text { font-size: 15px; line-height: 1.6; color: #444; margin: 0 0 20px 0; }
+    .recent-posts h3 { font-family: -apple-system, sans-serif; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin: 0 0 10px 0; }
+    .recent-posts ul { list-style: none; padding: 0; margin: 0; font-family: -apple-system, sans-serif; font-size: 14px; }
+    .recent-posts li { padding: 6px 0; border-top: 1px solid #eee; }
+  </style>
+</head>
+<body>
+  <div class="author-card" id="authorCard">
+    <div class="profile-top">
+      <div class="avatar-wrapper">
+        <img id="authorPhoto" class="author-avatar" src="../assets/face.svg" data-pii-type="face" alt="Sophia Montgomery portrait face" width="96" height="96">
+      </div>
+      <div class="author-meta">
+        <h2 id="authorName" itemprop="name" class="p-name">Sophia Montgomery</h2>
+        <p class="title">Lead Systems Architect & TechJournal Contributor</p>
+        <a id="authorEmail" class="email" href="mailto:sophia.montgomery@techjournal.io">sophia.montgomery@techjournal.io</a>
+      </div>
+    </div>
+    <p class="bio-text">
+      Sophia writes on privacy engineering, distributed ledger architectures, and zero-knowledge verification frameworks.
+    </p>
+    <div class="recent-posts">
+      <h3>Recent Publications</h3>
+      <ul>
+        <li>Implementing End-to-End Visual Redaction in Modern Web Browsers</li>
+        <li>Memory-Safe Data Flows for Client-Side Machine Learning</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CloudSaaS Workspace Login</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; margin: 0; padding: 40px; display: flex; justify-content: center; }
+    .auth-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; width: 420px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .brand-header { margin-bottom: 24px; text-align: center; }
+    .brand-title { font-size: 22px; font-weight: 700; color: #1e293b; margin: 0 0 8px 0; }
+    .brand-sub { font-size: 14px; color: #64748b; margin: 0; }
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px; }
+    input[type="email"], input[type="password"] { width: 100%; box-sizing: border-box; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+    .remember-row { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #64748b; margin-bottom: 24px; }
+    .btn-primary { width: 100%; padding: 11px; background: #2563eb; color: #ffffff; border: none; border-radius: 6px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="auth-card">
+    <header class="brand-header">
+      <h1 class="brand-title">CloudSaaS Workspace</h1>
+      <p class="brand-sub">Enter your credentials to access your console</p>
+    </header>
+    <form id="loginForm" onsubmit="return false;">
+      <div class="form-group">
+        <label for="loginEmail">Work Email Address</label>
+        <input type="email" id="loginEmail" name="email" autocomplete="email" placeholder="name@company.com" value="jordan.hayes@saastech.io" required>
+      </div>
+      <div class="form-group">
+        <label for="loginPassword">Account Password</label>
+        <input type="password" id="loginPassword" name="password" placeholder="••••••••••••" value="SuperSecretP@ssw0rd!" required>
+      </div>
+      <div class="remember-row">
+        <label><input type="checkbox" id="rememberMe"> Keep me signed in</label>
+        <a href="#forgot" id="linkForgotPassword">Forgot password?</a>
+      </div>
+      <button type="submit" id="btnSubmitLogin" class="btn-primary">Sign In to Dashboard</button>
+    </form>
+  </div>
+</body>
+</html>

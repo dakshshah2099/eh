@@ -1,7 +1,7 @@
 # Per-Class Recall Evaluation Report (Ticket 03)
 
-**Execution Date:** 2026-09-30T10:37:21.138Z  
-**Total Runtime:** 4727ms  
+**Execution Date:** 2026-09-30T09:42:27.265Z  
+**Total Runtime:** 2585ms  
 **Corpus Pages Evaluated:** 12  
 **Target Recall Threshold:** 85.0%  
 **Overall Verdict:** **PASSED ✅**

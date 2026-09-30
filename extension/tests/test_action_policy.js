@@ -321,3 +321,79 @@ test('Ticket 07 / C7: executeActions batch halts when unconfirmed high-risk acti
   assert.equal(actions[1].risk, 'high');
   assert.equal(actions[1].requires_confirmation, true);
 });
+
+test('Ticket 06: Risk policy classifies submit, cross-origin navigate, and destructive clicks as risky', () => {
+  // Safe actions: click, type, scroll, wait, done
+  const safeClick = { type: 'click', target_selector: '#next-page', reason: 'Go to next page' };
+  const safeType = { type: 'type', target_selector: '#name', text: 'Alice' };
+  const safeScroll = { type: 'scroll', deltaY: 200 };
+  const safeWait = { type: 'wait', delay_ms: 1000 };
+  const safeDone = { type: 'done', reason: 'Task completed' };
+
+  assert.equal(classifyActionRisk(safeClick).requires_confirmation, false);
+  assert.equal(classifyActionRisk(safeType).requires_confirmation, false);
+  assert.equal(classifyActionRisk(safeScroll).requires_confirmation, false);
+  assert.equal(classifyActionRisk(safeWait).requires_confirmation, false);
+  assert.equal(classifyActionRisk(safeDone).requires_confirmation, false);
+
+  // Risky 1: submit action type
+  const submitAction = { type: 'submit', target_selector: '#survey-form' };
+  const submitRes = classifyActionRisk(submitAction);
+  assert.equal(submitRes.risk, 'high');
+  assert.equal(submitRes.requires_confirmation, true);
+
+  // Risky 2: navigate action away from current origin
+  const navAction = { type: 'navigate', url: 'https://external-site.com/auth' };
+  const navRes = classifyActionRisk(navAction, { currentOrigin: 'https://mysite.com' });
+  assert.equal(navRes.risk, 'high');
+  assert.equal(navRes.requires_confirmation, true);
+
+  // Risky 3: destructive click keywords: delete, remove, cancel, logout
+  const deleteClick = { type: 'click', target_selector: '#del-btn', reason: 'Delete item' };
+  const removeClick = { type: 'click', target_selector: '#rm-btn', reason: 'Remove card' };
+  const cancelClick = { type: 'click', target_selector: '#cancel-btn', reason: 'Cancel subscription' };
+  const logoutClick = { type: 'click', target_selector: '#exit-btn', reason: 'Logout user' };
+
+  assert.equal(classifyActionRisk(deleteClick).requires_confirmation, true);
+  assert.equal(classifyActionRisk(removeClick).requires_confirmation, true);
+  assert.equal(classifyActionRisk(cancelClick).requires_confirmation, true);
+  assert.equal(classifyActionRisk(logoutClick).requires_confirmation, true);
+});
+
+test('Ticket 06: Confirmation gate permits execution on approval and blocks on rejection', async () => {
+  const riskyAction = { type: 'click', target_selector: '#del-account', reason: 'Delete account permanently' };
+  
+  // Test approval
+  let approvedCalled = false;
+  const allowOptions = {
+    onConfirmAction: async (act) => {
+      approvedCalled = true;
+      return true;
+    }
+  };
+  const allowRes = await enforceConfirmationGate(riskyAction, allowOptions);
+  assert.equal(allowRes, true);
+  assert.equal(approvedCalled, true);
+  assert.equal(riskyAction.confirmed, true);
+
+  // Test rejection
+  const riskyAction2 = { type: 'click', target_selector: '#del-data', reason: 'Purge all user data' };
+  let rejectCalled = false;
+  const rejectOptions = {
+    onConfirmAction: async (act) => {
+      rejectCalled = true;
+      return false;
+    }
+  };
+  await assert.rejects(
+    async () => {
+      await enforceConfirmationGate(riskyAction2, rejectOptions);
+    },
+    (err) => {
+      assert.ok(err instanceof ConfirmationRequired);
+      assert.equal(err.name, 'ConfirmationDeclined');
+      return true;
+    }
+  );
+  assert.equal(rejectCalled, true);
+});

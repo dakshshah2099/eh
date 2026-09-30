@@ -205,6 +205,29 @@
       </div>
     </div>
 
+    <!-- Confirmation Modal Overlay (Ticket 06: Risky Action Gate) -->
+    <div id="confirmModalOverlay" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <span class="modal-icon">⚠️</span>
+          <span class="modal-title">Approval Required</span>
+        </div>
+        <div class="modal-body">
+          <p id="confirmSummary" class="modal-summary">The agent is about to execute a high-risk action.</p>
+          <div class="modal-details">
+            <span class="detail-label">Action:</span> <span id="confirmActionType" class="detail-value">submit</span>
+          </div>
+          <div class="modal-details">
+            <span class="detail-label">Target:</span> <span id="confirmActionTarget" class="detail-value">button#pay</span>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button id="confirmAllowBtn" class="btn btn-primary btn-allow">Allow</button>
+          <button id="confirmStopBtn" class="btn btn-danger btn-stop">Stop agent</button>
+        </div>
+      </div>
+    </div>
+
     <footer class="footer">
       <span>Manifest V3 Lens · LiteLLM</span>
     </footer>

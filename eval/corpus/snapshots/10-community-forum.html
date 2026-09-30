@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Developer Community Member Profile</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Person",
+    "name": "Lucas Vance",
+    "email": "lucas.vance@opensource-dev.org"
+  }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; margin: 0; padding: 40px; display: flex; justify-content: center; }
+    .profile-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; width: 480px; padding: 28px; color: #f8fafc; }
+    .top-row { display: flex; gap: 20px; align-items: center; margin-bottom: 20px; }
+    .avatar-wrapper { width: 84px; height: 84px; border-radius: 50%; overflow: hidden; border: 2px solid #38bdf8; }
+    .avatar-wrapper img { width: 100%; height: 100%; object-fit: cover; }
+    h2 { margin: 0 0 4px 0; font-size: 20px; color: #f8fafc; }
+    .handle { color: #38bdf8; font-size: 14px; margin: 0 0 6px 0; }
+    .email-link { color: #94a3b8; font-size: 13px; text-decoration: none; }
+    .stats-row { display: flex; gap: 24px; border-top: 1px solid #334155; padding-top: 16px; margin-top: 16px; }
+    .stat-item span { display: block; }
+    .stat-val { font-size: 18px; font-weight: 700; color: #f1f5f9; }
+    .stat-label { font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="profile-card" id="forumCard">
+    <div class="top-row">
+      <div class="avatar-wrapper">
+        <img id="forumUserAvatar" class="forum-avatar" src="../assets/face.svg" data-pii-type="face" alt="Lucas Vance Member Avatar" width="84" height="84">
+      </div>
+      <div>
+        <h2 id="forumUserName" itemprop="name">Lucas Vance</h2>
+        <p class="handle">@lucas_vance</p>
+        <a id="forumUserEmail" class="email-link" href="mailto:lucas.vance@opensource-dev.org">lucas.vance@opensource-dev.org</a>
+      </div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-item"><span class="stat-val">342</span><span class="stat-label">Contributions</span></div>
+      <div class="stat-item"><span class="stat-val">89</span><span class="stat-label">Pull Requests</span></div>
+      <div class="stat-item"><span class="stat-val">12</span><span class="stat-label">Repositories</span></div>
+    </div>
+  </div>
+</body>
+</html>

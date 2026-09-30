@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Online Banking Account Registration</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0fdf4; margin: 0; padding: 40px; display: flex; justify-content: center; }
+    .reg-card { width: 480px; background: white; border: 1px solid #bbf7d0; border-radius: 12px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    h1 { font-size: 22px; color: #166534; margin: 0 0 8px 0; }
+    p.sub { font-size: 14px; color: #15803d; margin: 0 0 24px 0; }
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+    input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+    .btn-submit { width: 100%; background: #16a34a; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="reg-card">
+    <h1>Online Banking Registration</h1>
+    <p class="sub">Enroll your verified legal identity and set up credentials.</p>
+    <form id="bankingRegForm" onsubmit="return false;">
+      <div class="form-group">
+        <label for="applicantName">Applicant Full Legal Name</label>
+        <input type="text" id="applicantName" name="full_name" autocomplete="name" placeholder="Full Name" value="Jonathan Miller" required>
+      </div>
+      <div class="form-group">
+        <label for="applicantEmail">Primary Banking Email</label>
+        <input type="email" id="applicantEmail" name="email" autocomplete="email" placeholder="email@domain.com" value="j.miller@financestack.com" required>
+      </div>
+      <div class="form-group">
+        <label for="accessPassword">Create Banking Online Password</label>
+        <input type="password" id="accessPassword" name="password" placeholder="••••••••••••" value="BankingSecretP@ss2026!" required>
+      </div>
+      <button type="submit" id="btnEnroll" class="btn-submit">Submit Banking Application</button>
+    </form>
+  </div>
+</body>
+</html>

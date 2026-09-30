@@ -1,0 +1,24 @@
+{
+  "pageId": "01-saas-login",
+  "title": "CloudSaaS Workspace Login",
+  "classes": ["password", "email"],
+  "annotations": [
+    {
+      "id": "saas-login-email",
+      "type": "email",
+      "selector": "#loginEmail",
+      "description": "User account login email field"
+    },
+    {
+      "id": "saas-login-password",
+      "type": "password",
+      "selector": "#loginPassword",
+      "description": "User account password input field"
+    }
+  ],
+  "negativeSelectors": [
+    "#btnSubmitLogin",
+    "#rememberMe",
+    ".brand-title"
+  ]
+}

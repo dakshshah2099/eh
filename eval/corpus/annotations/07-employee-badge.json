@@ -1,0 +1,30 @@
+{
+  "pageId": "07-employee-badge",
+  "title": "Enterprise Security Access Badge",
+  "classes": ["face", "text_pii", "email"],
+  "annotations": [
+    {
+      "id": "badge-employee-face",
+      "type": "face",
+      "selector": "#badgePhoto",
+      "description": "Employee official badge photograph"
+    },
+    {
+      "id": "badge-employee-name",
+      "type": "text_pii",
+      "selector": "#badgeEmployeeName",
+      "description": "Employee official name on badge"
+    },
+    {
+      "id": "badge-employee-email",
+      "type": "email",
+      "selector": "#badgeEmail",
+      "description": "Employee official email address"
+    }
+  ],
+  "negativeSelectors": [
+    ".badge-top h1",
+    ".designation",
+    ".badge-footer"
+  ]
+}

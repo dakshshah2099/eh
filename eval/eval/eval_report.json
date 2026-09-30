@@ -1,0 +1,745 @@
+{
+  "timestamp": "2026-09-30T09:42:29.934Z",
+  "durationMs": 2014,
+  "testHarness": {
+    "demoUrl": "http://127.0.0.1:24499/index.html",
+    "pageTitle": "On-Device Visual Perception - Demo & Test Harness",
+    "viewport": {
+      "width": 1280,
+      "height": 800,
+      "scrollX": 0,
+      "scrollY": 0
+    }
+  },
+  "metrics": {
+    "rawPiiLeakageRate": 0,
+    "precision": 1,
+    "recall": 1,
+    "f1Score": 1,
+    "truePositives": 12,
+    "falseNegatives": 0,
+    "falsePositives": 0,
+    "totalEntities": 12,
+    "totalRawTokens": 13,
+    "leakedTokensCount": 0
+  },
+  "tokensAnalysis": [
+    {
+      "token": "jane.doe.personal@confidential-mail.org",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "P@ssw0rd!#Secret99",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "839201",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "Jane Alice Doe",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "+1 (555) 234-5678",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "987-65-4321",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "4532 0150 9823 8812",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "842",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "00987123456",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "121000358",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "742 Evergreen Terrace",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "Springfield",
+      "leaked": false,
+      "status": "REDACTED"
+    },
+    {
+      "token": "97477",
+      "leaked": false,
+      "status": "REDACTED"
+    }
+  ],
+  "entitiesAnalysis": [
+    {
+      "selector": "#userEmail",
+      "category": "email",
+      "groundTruthValue": "jane.doe.personal@confidential-mail.org",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "solid_black_mask",
+      "status": "PASS"
+    },
+    {
+      "selector": "#userPassword",
+      "category": "password",
+      "groundTruthValue": "P@ssw0rd!#Secret99",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "solid_black_mask",
+      "status": "PASS"
+    },
+    {
+      "selector": "#backupPin",
+      "category": "password",
+      "groundTruthValue": "839201",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "solid_black_mask",
+      "status": "PASS"
+    },
+    {
+      "selector": "#fullName",
+      "category": "name",
+      "groundTruthValue": "Jane Alice Doe",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "solid_black_mask",
+      "status": "PASS"
+    },
+    {
+      "selector": "#phoneNumber",
+      "category": "phone",
+      "groundTruthValue": "+1 (555) 234-5678",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "solid_black_mask",
+      "status": "PASS"
+    },
+    {
+      "selector": "#ssnInput",
+      "category": "ssn",
+      "groundTruthValue": "987-65-4321",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "redaction_mapped",
+      "status": "PASS"
+    },
+    {
+      "selector": "#creditCardNumber",
+      "category": "credit_card",
+      "groundTruthValue": "4532 0150 9823 8812",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "gaussian_blur_or_pixelation",
+      "status": "PASS"
+    },
+    {
+      "selector": "#cardCvv",
+      "category": "credit_card",
+      "groundTruthValue": "842",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "solid_black_mask",
+      "status": "PASS"
+    },
+    {
+      "selector": "#bankAccount",
+      "category": "financial",
+      "groundTruthValue": "00987123456",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "redaction_mapped",
+      "status": "PASS"
+    },
+    {
+      "selector": "#routingNumber",
+      "category": "financial",
+      "groundTruthValue": "121000358",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "gaussian_blur_or_pixelation",
+      "status": "PASS"
+    },
+    {
+      "selector": "#streetAddress",
+      "category": "address",
+      "groundTruthValue": "742 Evergreen Terrace",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "redaction_mapped",
+      "status": "PASS"
+    },
+    {
+      "selector": "#avatarContainer",
+      "category": "face",
+      "groundTruthValue": "[VISUAL_BIOMETRIC]",
+      "detected": true,
+      "redacted": true,
+      "textLeaked": false,
+      "visualObscured": true,
+      "obscurationMethod": "gaussian_blur_or_pixelation",
+      "status": "PASS"
+    }
+  ],
+  "falsePositiveChecks": [
+    {
+      "selector": "h1.header-title",
+      "mistakenlyRedacted": false,
+      "status": "CLEAN"
+    },
+    {
+      "selector": "button#btnResetData",
+      "mistakenlyRedacted": false,
+      "status": "CLEAN"
+    },
+    {
+      "selector": "button#btnAuditProfile",
+      "mistakenlyRedacted": false,
+      "status": "CLEAN"
+    },
+    {
+      "selector": "button#btnSubmitTelemetry",
+      "mistakenlyRedacted": false,
+      "status": "CLEAN"
+    },
+    {
+      "selector": "span.badge",
+      "mistakenlyRedacted": false,
+      "status": "CLEAN"
+    }
+  ],
+  "imagePixelInspection": {
+    "dimensions": {
+      "width": 768,
+      "height": 480
+    },
+    "totalVisualEntities": 12,
+    "visualObscuredCount": 12,
+    "solidBlackMaskCount": 4,
+    "blurOrPixelationCount": 4,
+    "results": [
+      {
+        "selector": "#userEmail",
+        "category": "email",
+        "viewportBBox": [
+          65,
+          387,
+          538,
+          39
+        ],
+        "canvasBBox": [
+          39,
+          232,
+          323,
+          23
+        ],
+        "solidCovered": true,
+        "blurCovered": true,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "solid_black_mask"
+      },
+      {
+        "selector": "#userPassword",
+        "category": "password",
+        "viewportBBox": [
+          65,
+          469,
+          263,
+          39
+        ],
+        "canvasBBox": [
+          39,
+          281,
+          158,
+          23
+        ],
+        "solidCovered": true,
+        "blurCovered": true,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "solid_black_mask"
+      },
+      {
+        "selector": "#backupPin",
+        "category": "password",
+        "viewportBBox": [
+          340,
+          469,
+          263,
+          39
+        ],
+        "canvasBBox": [
+          204,
+          281,
+          158,
+          23
+        ],
+        "solidCovered": true,
+        "blurCovered": true,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "solid_black_mask"
+      },
+      {
+        "selector": "#fullName",
+        "category": "name",
+        "viewportBBox": [
+          215,
+          681,
+          388,
+          39
+        ],
+        "canvasBBox": [
+          129,
+          409,
+          233,
+          23
+        ],
+        "solidCovered": true,
+        "blurCovered": true,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "solid_black_mask"
+      },
+      {
+        "selector": "#phoneNumber",
+        "category": "phone",
+        "viewportBBox": [
+          215,
+          754,
+          388,
+          39
+        ],
+        "canvasBBox": [
+          129,
+          452,
+          233,
+          23
+        ],
+        "solidCovered": true,
+        "blurCovered": true,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "solid_black_mask"
+      },
+      {
+        "selector": "#ssnInput",
+        "category": "ssn",
+        "viewportBBox": [
+          65,
+          839,
+          263,
+          39
+        ],
+        "canvasBBox": [
+          39,
+          503,
+          158,
+          23
+        ],
+        "solidCovered": false,
+        "blurCovered": false,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "redaction_mapped"
+      },
+      {
+        "selector": "#creditCardNumber",
+        "category": "credit_card",
+        "viewportBBox": [
+          677,
+          571,
+          538,
+          39
+        ],
+        "canvasBBox": [
+          406,
+          343,
+          323,
+          23
+        ],
+        "solidCovered": false,
+        "blurCovered": true,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "gaussian_blur_or_pixelation"
+      },
+      {
+        "selector": "#cardCvv",
+        "category": "credit_card",
+        "viewportBBox": [
+          952,
+          653,
+          263,
+          39
+        ],
+        "canvasBBox": [
+          571,
+          392,
+          158,
+          23
+        ],
+        "solidCovered": true,
+        "blurCovered": true,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "solid_black_mask"
+      },
+      {
+        "selector": "#bankAccount",
+        "category": "financial",
+        "viewportBBox": [
+          677,
+          734,
+          263,
+          39
+        ],
+        "canvasBBox": [
+          406,
+          440,
+          158,
+          23
+        ],
+        "solidCovered": false,
+        "blurCovered": false,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "redaction_mapped"
+      },
+      {
+        "selector": "#routingNumber",
+        "category": "financial",
+        "viewportBBox": [
+          952,
+          734,
+          263,
+          39
+        ],
+        "canvasBBox": [
+          571,
+          440,
+          158,
+          23
+        ],
+        "solidCovered": false,
+        "blurCovered": true,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "gaussian_blur_or_pixelation"
+      },
+      {
+        "selector": "#streetAddress",
+        "category": "address",
+        "viewportBBox": [
+          65,
+          924,
+          538,
+          39
+        ],
+        "canvasBBox": [
+          39,
+          554,
+          323,
+          23
+        ],
+        "solidCovered": false,
+        "blurCovered": false,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "redaction_mapped"
+      },
+      {
+        "selector": "#avatarContainer",
+        "category": "face",
+        "viewportBBox": [
+          65,
+          659,
+          130,
+          130
+        ],
+        "canvasBBox": [
+          39,
+          395,
+          78,
+          78
+        ],
+        "solidCovered": false,
+        "blurCovered": true,
+        "mappedInRedactionMap": true,
+        "obscured": true,
+        "method": "gaussian_blur_or_pixelation"
+      }
+    ]
+  },
+  "pipelineInterceptedPayload": {
+    "task": "Securely audit profile and submit sanitized transaction",
+    "serverUrl": "http://127.0.0.1:24500/api/plan",
+    "redactionMapCount": 20,
+    "redactionMap": [
+      {
+        "bbox": [
+          677,
+          361,
+          538,
+          164
+        ],
+        "category": "card",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          65,
+          387,
+          538,
+          39
+        ],
+        "category": "email",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          65,
+          469,
+          263,
+          39
+        ],
+        "category": "password",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          340,
+          469,
+          263,
+          39
+        ],
+        "category": "password",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          677,
+          571,
+          538,
+          39
+        ],
+        "category": "card",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          677,
+          653,
+          263,
+          39
+        ],
+        "category": "card",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          952,
+          653,
+          263,
+          39
+        ],
+        "category": "card",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          65,
+          654,
+          538,
+          139
+        ],
+        "category": "phone",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          677,
+          734,
+          263,
+          39
+        ],
+        "category": "card",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          952,
+          734,
+          263,
+          39
+        ],
+        "category": "card",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          65,
+          839,
+          263,
+          39
+        ],
+        "category": "ssn",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          340,
+          839,
+          263,
+          42
+        ],
+        "category": "pii",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          65,
+          924,
+          538,
+          39
+        ],
+        "category": "pii",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          692,
+          961,
+          508,
+          69
+        ],
+        "category": "ssn",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          65,
+          1005,
+          257,
+          39
+        ],
+        "category": "pii",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          334,
+          1005,
+          129,
+          39
+        ],
+        "category": "pii",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          475,
+          1005,
+          129,
+          39
+        ],
+        "category": "pii",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          692,
+          1038,
+          508,
+          46
+        ],
+        "category": "email",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          692,
+          1092,
+          508,
+          46
+        ],
+        "category": "card",
+        "source": "dom",
+        "confidence": 1
+      },
+      {
+        "bbox": [
+          677,
+          1196,
+          538,
+          94
+        ],
+        "category": "free-text",
+        "source": "dom",
+        "confidence": 1
+      }
+    ]
+  }
+}

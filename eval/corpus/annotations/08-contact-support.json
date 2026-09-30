@@ -1,0 +1,24 @@
+{
+  "pageId": "08-contact-support",
+  "title": "Customer Technical Support Request",
+  "classes": ["text_pii", "email"],
+  "annotations": [
+    {
+      "id": "support-sender-name",
+      "type": "text_pii",
+      "selector": "#senderName",
+      "description": "Support sender full name input"
+    },
+    {
+      "id": "support-sender-email",
+      "type": "email",
+      "selector": "#senderEmail",
+      "description": "Support sender contact email input"
+    }
+  ],
+  "negativeSelectors": [
+    "#ticketSubject",
+    "#ticketMessage",
+    "#btnSubmitTicket"
+  ]
+}

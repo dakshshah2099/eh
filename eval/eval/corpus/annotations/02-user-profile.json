@@ -1,0 +1,35 @@
+{
+  "pageId": "02-user-profile",
+  "title": "User Profile & Security Settings",
+  "classes": ["face", "text_pii", "email", "password"],
+  "annotations": [
+    {
+      "id": "profile-face-avatar",
+      "type": "face",
+      "selector": "#profileAvatar",
+      "description": "User facial portrait photo"
+    },
+    {
+      "id": "profile-full-name",
+      "type": "text_pii",
+      "selector": "#fullName",
+      "description": "User legal full name input"
+    },
+    {
+      "id": "profile-account-email",
+      "type": "email",
+      "selector": "#userEmail",
+      "description": "User account email address input"
+    },
+    {
+      "id": "profile-security-password",
+      "type": "password",
+      "selector": "#currentPassword",
+      "description": "Current security account password"
+    }
+  ],
+  "negativeSelectors": [
+    "#btnSaveProfile",
+    ".container"
+  ]
+}

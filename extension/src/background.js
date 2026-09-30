@@ -17,6 +17,10 @@ let agentState = {
   lastStoppedAt: null
 };
 
+// Pending confirmation handler for risky actions (Ticket 06)
+let pendingConfirmationResolver = null;
+let currentPendingConfirmation = null;
+
 // Offscreen document singleton management
 let creatingOffscreenPromise = null;
 
@@ -643,14 +647,75 @@ export async function startLoop(tabId = null, task = '', options = {}) {
           try { opts.onStatus(actionDecidedEvent); } catch (_) {}
         }
 
-        // Ticket 07 / C7: Action-risk policy classification & confirmation gate
+        // Ticket 07 / C7 / Ticket 06: Action-risk policy classification & confirmation gate
         const policyContext = {
           task: targetTask,
           ui_elements: lastPlan?.ui_elements || planResult?.payload?.ui_elements || [],
-          step
+          step,
+          currentOrigin: typeof targetTabId === 'number' ? (await chrome.tabs.get(targetTabId).catch(() => null))?.url : ''
         };
         classifyActionRisk(act, policyContext);
-        await enforceConfirmationGate(act, opts);
+
+        if (act.requires_confirmation && !act.confirmed) {
+          // If onConfirmAction callback was provided in opts (e.g. test harness), use it
+          if (typeof opts.onConfirmAction === 'function') {
+            await enforceConfirmationGate(act, opts);
+          } else {
+            // Live extension mode: broadcast CONFIRM_ACTION_REQUIRED to popup and wait
+            console.log(`[Background] Pausing loop for risky action approval at step ${step}:`, act);
+            const plainSummary = act.reason || act.description || `Execute ${actType} on ${target || 'page'}`;
+            const confirmEvent = {
+              type: 'CONFIRM_ACTION_REQUIRED',
+              action: act,
+              actionType: actType,
+              target: target || 'page',
+              summary: plainSummary,
+              step,
+              taskId,
+              sessionId
+            };
+
+            currentPendingConfirmation = confirmEvent;
+            try {
+              const session = getSessionStorage();
+              if (session && typeof session.set === 'function') {
+                await session.set({ pendingConfirmation: confirmEvent });
+              }
+            } catch (_) {}
+
+            broadcastTaskMessage(confirmEvent);
+
+            const approved = await new Promise((resolve) => {
+              pendingConfirmationResolver = resolve;
+            });
+
+            currentPendingConfirmation = null;
+            pendingConfirmationResolver = null;
+            try {
+              const session = getSessionStorage();
+              if (session && typeof session.remove === 'function') {
+                await session.remove('pendingConfirmation');
+              }
+            } catch (_) {}
+
+            if (!approved) {
+              console.log(`[Background] Risky action declined by user at step ${step}. Exiting loop.`);
+              agentState.isRunning = false;
+              agentState.lastStoppedAt = Date.now();
+              agentState.lastCompletionStatus = 'stopped';
+              agentState.lastCompletionReason = 'User declined action confirmation';
+              await updateAgentState();
+              broadcastTaskMessage({
+                type: 'TASK_STOPPED',
+                stepCount: step,
+                reason: 'User declined action confirmation'
+              });
+              break;
+            }
+
+            act.confirmed = true;
+          }
+        }
 
         console.log(`[Background] Executing action at step ${step}:`, act);
         const actionResult = await executeActionInTab(targetTabId, act);
@@ -1055,8 +1120,29 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
         case 'STOP_LOOP':
         case 'STOP_AGENT_LOOP':
         case 'STOP_AGENT': {
+          if (pendingConfirmationResolver) {
+            pendingConfirmationResolver(false);
+          }
           const res = await stopLoop();
           sendResponse(res);
+          break;
+        }
+        case 'CONFIRM_ACTION_APPROVED': {
+          if (typeof pendingConfirmationResolver === 'function') {
+            pendingConfirmationResolver(true);
+            sendResponse({ success: true, approved: true });
+          } else {
+            sendResponse({ success: false, error: 'No confirmation pending' });
+          }
+          break;
+        }
+        case 'CONFIRM_ACTION_REJECTED': {
+          if (typeof pendingConfirmationResolver === 'function') {
+            pendingConfirmationResolver(false);
+            sendResponse({ success: true, approved: false });
+          } else {
+            sendResponse({ success: false, error: 'No confirmation pending' });
+          }
           break;
         }
         case 'CAPTURE_SCREEN': {

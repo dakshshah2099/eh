@@ -531,9 +531,94 @@ body {
   letter-spacing: 0.2px;
 }
 
-.handover-btn {
+/* ── Confirmation Modal Overlay (Ticket 06) ── */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.modal-overlay.hidden {
+  display: none !important;
+}
+
+.modal-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  border-radius: 8px;
+  width: 86%;
+  max-width: 320px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-icon {
+  font-size: 16px;
+}
+
+.modal-title {
   font-size: 13px;
   font-weight: 700;
+  color: #f87171;
+}
+
+.modal-summary {
+  font-size: 12px;
+  color: var(--text-main);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.modal-details {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.detail-value {
+  color: #f8fafc;
+  font-family: monospace;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-allow {
+  background: #16a34a;
+  flex: 1;
+}
+
+.btn-allow:hover {
+  background: #15803d;
+}
+
+.btn-stop {
+  flex: 1;
 }
 
 .footer {
