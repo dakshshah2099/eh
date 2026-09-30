@@ -542,7 +542,7 @@ export async function startLoop(tabId = null, task = '', options = {}) {
       try {
         if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
           const stored = await chrome.storage.local.get(['llmConfig', 'llmMode']);
-          if (stored?.llmMode === 'cloud' && stored.llmConfig) {
+          if (stored?.llmConfig) {
             currentLlmConfig = stored.llmConfig;
           }
         }

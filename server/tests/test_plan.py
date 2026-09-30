@@ -926,6 +926,7 @@ def test_plan_endpoint_done_action(mock_ollama):
         "image_base64": "abc",
         "viewport": {"width": 1280, "height": 720},
         "redaction_map": [],
+        "provider": "ollama",
     }
     response = client.post("/api/plan", json=payload)
     assert response.status_code == 200

@@ -40,16 +40,31 @@ def load_smolvlm():
         )
 
     logger.info(f"[SmolVLM] Loading local model from {m_dir}...")
-    from transformers import AutoProcessor, SmolVLMForConditionalGeneration
+    import json
+    from transformers import AutoModelForImageTextToText, AutoProcessor
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
 
-    processor = AutoProcessor.from_pretrained(str(m_dir))
-    model = SmolVLMForConditionalGeneration.from_pretrained(
+    processor = AutoProcessor.from_pretrained(str(m_dir), local_files_only=True)
+    if not processor.chat_template or processor.chat_template == "Entry not found":
+        tpl_file = m_dir / "chat_template.json"
+        tok_file = m_dir / "tokenizer_config.json"
+        if tpl_file.exists():
+            with open(tpl_file, "r", encoding="utf-8") as f:
+                processor.chat_template = json.load(f).get("chat_template")
+        elif tok_file.exists():
+            with open(tok_file, "r", encoding="utf-8") as f:
+                processor.chat_template = json.load(f).get("chat_template")
+
+    if hasattr(processor, "tokenizer") and (not processor.tokenizer.chat_template or processor.tokenizer.chat_template == "Entry not found"):
+        processor.tokenizer.chat_template = processor.chat_template
+
+    model = AutoModelForImageTextToText.from_pretrained(
         str(m_dir),
         torch_dtype=dtype,
-        low_cpu_mem_usage=True
+        low_cpu_mem_usage=True,
+        local_files_only=True,
     ).to(device)
 
     model.eval()

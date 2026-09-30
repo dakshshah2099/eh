@@ -34,10 +34,10 @@ OPENAI_COMPATIBLE_PROVIDERS = {
 }
 
 def get_vlm_provider() -> str:
-    return os.getenv("VLM_PROVIDER", "ollama").lower()
+    return os.getenv("VLM_PROVIDER", "smolvlm").lower()
 
 def get_vlm_model() -> str:
-    return os.getenv("VLM_MODEL", "llama3.2-vision")
+    return os.getenv("VLM_MODEL", "HuggingFaceTB/SmolVLM-256M-Instruct")
 
 def get_vlm_base_url() -> Optional[str]:
     return os.getenv("VLM_BASE_URL")
@@ -390,29 +390,76 @@ def normalize_action_dict(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
-def parse_vlm_response(raw_text: str) -> PlanResponse:
-    cleaned = raw_text.strip()
+def _repair_and_load_json(text: str) -> Any:
+    cleaned = text.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned)
         cleaned = re.sub(r"\n?```$", "", cleaned).strip()
 
+    # 1. Direct parse attempt
     try:
-        data = json.loads(cleaned)
+        return json.loads(cleaned)
     except Exception:
-        # Try extracting code block JSON first
-        code_block = re.search(r"```(?:json)?\s*(\{[\s\S]*?\}|\[[\s\S]*?\])\s*```", cleaned)
-        if code_block:
-            data = json.loads(code_block.group(1))
-        else:
-            match = re.search(r"(\{[\s\S]*\})", cleaned)
-            if match:
-                data = json.loads(match.group(1))
-            else:
-                list_match = re.search(r"(\[[\s\S]*\])", cleaned)
-                if list_match:
-                    data = json.loads(list_match.group(1))
-                else:
-                    raise ValueError(f"Could not parse valid JSON from VLM output: {raw_text[:200]}")
+        pass
+
+    # 2. Extract markdown code block
+    code_block = re.search(r"```(?:json)?\s*(\{[\s\S]*?\}|\[[\s\S]*?\])\s*```", cleaned)
+    if code_block:
+        try:
+            return json.loads(code_block.group(1))
+        except Exception:
+            pass
+
+    # 3. Find outer braces or brackets
+    obj_match = re.search(r"(\{[\s\S]*\})", cleaned)
+    if obj_match:
+        cand = obj_match.group(1)
+        try:
+            return json.loads(cand)
+        except Exception:
+            # Strip trailing commas
+            cand_fixed = re.sub(r",\s*([\}\]])", r"\1", cand)
+            try:
+                return json.loads(cand_fixed)
+            except Exception:
+                pass
+
+    list_match = re.search(r"(\[[\s\S]*\])", cleaned)
+    if list_match:
+        cand = list_match.group(1)
+        try:
+            return json.loads(cand)
+        except Exception:
+            cand_fixed = re.sub(r",\s*([\}\]])", r"\1", cand)
+            try:
+                return json.loads(cand_fixed)
+            except Exception:
+                pass
+
+    # 4. Handle truncated/unclosed JSON (e.g. due to max_tokens)
+    first_open = re.search(r"[\{\[]", cleaned)
+    if first_open:
+        start_idx = first_open.start()
+        partial = cleaned[start_idx:].strip()
+        # Remove trailing dangling comma or colon
+        partial = re.sub(r"[,:\s]+$", "", partial)
+        # Count open braces and brackets
+        open_braces = partial.count("{") - partial.count("}")
+        open_brackets = partial.count("[") - partial.count("]")
+        # Close any dangling quotes
+        if partial.count('"') % 2 != 0:
+            partial += '"'
+        partial = partial + ("]" * max(0, open_brackets)) + ("}" * max(0, open_braces))
+        try:
+            return json.loads(partial)
+        except Exception:
+            pass
+
+    raise ValueError(f"Could not parse valid JSON from VLM output: {text[:200]}")
+
+
+def parse_vlm_response(raw_text: str) -> PlanResponse:
+    data = _repair_and_load_json(raw_text)
 
     if isinstance(data, list):
         data = {"actions": data, "task_complete": False, "confidence": 0.9}
@@ -423,6 +470,24 @@ def parse_vlm_response(raw_text: str) -> PlanResponse:
                 "actions": [data],
                 "task_complete": True if (str(data.get("action", "")).lower() == "done" or str(data.get("type", "")).lower() == "done") else False,
                 "confidence": data.get("confidence", 0.9),
+            }
+        elif "actions" not in data and any(k in data for k in ("tag", "id", "target_selector", "target_bbox", "target_element_id", "selector")):
+            elem_id = data.get("id") or data.get("target_element_id")
+            selector = data.get("target_selector") or data.get("selector") or (f"#{elem_id}" if elem_id else None)
+            bbox = data.get("target_bbox") or data.get("bbox")
+            tag_name = str(data.get("tag", "")).lower()
+            act_type = "type" if data.get("text") and ("input" in tag_name or "textarea" in tag_name) else "click"
+            data = {
+                "actions": [{
+                    "type": act_type,
+                    "target_selector": selector,
+                    "target_bbox": bbox,
+                    "target_element_id": elem_id,
+                    "text": data.get("text") if act_type == "type" else None,
+                    "reason": data.get("reason") or f"Interact with {data.get('tag') or 'element'} {elem_id or ''}".strip(),
+                }],
+                "task_complete": False,
+                "confidence": 0.85,
             }
 
         actions = data.get("actions")
