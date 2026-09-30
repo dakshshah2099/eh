@@ -936,3 +936,122 @@ def test_plan_endpoint_done_action(mock_ollama):
     assert data["actions"][0]["reason"] == "Task goal satisfied: flight booked successfully"
 
 
+def test_build_planner_prompt_two_redacted_regions_different_types():
+    """Ticket 02: A payload with two redacted regions of different types produces
+    a prompt string containing both region descriptions with normalised coordinates,
+    region types, and instructions to treat them as present-but-hidden."""
+    redaction_items = [
+        {"bbox": [100, 200, 250, 40], "type": "password field"},
+        {"bbox": [100, 280, 250, 40], "category": "email address"},
+    ]
+    viewport = {"width": 1000, "height": 800}
+
+    prompt = build_planner_prompt(
+        task="Log into the dashboard",
+        dom_skeleton=[{"tag": "form", "id": "login-form"}],
+        ui_elements=[],
+        redaction_map=redaction_items,
+        viewport=viewport,
+    )
+
+    # Asserts human-readable redaction scheme section header
+    assert "The following regions have been redacted for privacy:" in prompt
+    assert "REDACTED REGIONS" in prompt
+
+    # Asserts both region types and coordinates are described
+    assert "password field" in prompt
+    assert "email address" in prompt
+    assert "[100, 200, 250, 40]" in prompt
+    assert "[100, 280, 250, 40]" in prompt
+
+    # Asserts normalised coordinates: [100/1000, 200/800, 250/1000, 40/800] -> [0.1, 0.25, 0.25, 0.05]
+    # and [100/1000, 280/800, 250/1000, 40/800] -> [0.1, 0.35, 0.25, 0.05]
+    assert "[0.1, 0.25, 0.25, 0.05]" in prompt
+    assert "[0.1, 0.35, 0.25, 0.05]" in prompt
+
+    # Asserts VLM is instructed to treat redacted regions as present-but-hidden and still plan actions targeting them
+    assert "present-but-hidden" in prompt
+    assert "plan actions that target these regions" in prompt
+    assert "type into a password field" in prompt
+
+
+def test_build_planner_prompt_omitted_when_empty_redacted_regions():
+    """Ticket 02: Prompt section is omitted when redacted regions list is empty,
+    producing no prompt regression for unredacted pages."""
+    prompt_empty = build_planner_prompt(
+        task="Browse catalog",
+        dom_skeleton=[{"tag": "div", "id": "catalog"}],
+        ui_elements=[],
+        redaction_map=[],
+        viewport={"width": 1000, "height": 800},
+    )
+
+    assert "REDACTED REGIONS" not in prompt_empty
+    assert "redacted for privacy" not in prompt_empty
+    assert "INSTRUCTIONS FOR REDACTED REGIONS" not in prompt_empty
+
+    # Also test when passing None
+    prompt_none = build_planner_prompt(
+        task="Browse catalog",
+        dom_skeleton=[{"tag": "div", "id": "catalog"}],
+        ui_elements=[],
+        redaction_map=None,
+        viewport={"width": 1000, "height": 800},
+    )
+    assert "REDACTED REGIONS" not in prompt_none
+    assert "redacted for privacy" not in prompt_none
+
+
+@patch("vlm_planner.call_ollama")
+def test_plan_endpoint_renders_redacted_regions_into_vlm_prompt(mock_ollama):
+    """Ticket 02: Server /api/plan endpoint formats payload's redacted regions into
+    the VLM prompt sent to the vision provider."""
+    mock_ollama.return_value = json.dumps({
+        "actions": [
+            {
+                "type": "type",
+                "target_bbox": [100, 200, 250, 40],
+                "secret_key": "ACCOUNT_PASSWORD",
+                "reason": "Type password into masked password field",
+            }
+        ],
+        "task_complete": False,
+        "confidence": 0.95,
+    })
+
+    payload = {
+        "task": "Log in with credentials",
+        "dom_skeleton": [{"tag": "input", "id": "pwd"}],
+        "image_base64": "data:image/png;base64,mockpng",
+        "viewport": {"width": 1280, "height": 720},
+        "redacted_regions": [
+            {"bbox": [100.0, 200.0, 250.0, 40.0], "type": "password field"},
+            {"bbox": [500.0, 50.0, 80.0, 80.0], "type": "user avatar face"},
+        ],
+        "provider": "ollama",
+    }
+
+    response = client.post("/api/plan", json=payload)
+    assert response.status_code == 200
+
+    mock_ollama.assert_called_once()
+    called_prompt = (
+        mock_ollama.call_args[0][0]
+        if (mock_ollama.call_args[0] and len(mock_ollama.call_args[0]) > 0)
+        else (mock_ollama.call_args.kwargs.get("prompt") or mock_ollama.call_args[1].get("prompt", ""))
+    )
+
+    # Both region descriptions must be rendered in the prompt
+    assert "password field" in called_prompt
+    assert "user avatar face" in called_prompt
+
+    # Normalised coordinates must be computed and present
+    # 100/1280 ~= 0.0781, 200/720 ~= 0.2778
+    assert "0.0781" in called_prompt
+    assert "0.2778" in called_prompt
+
+    # Instruction to treat as present-but-masked
+    assert "present-but-hidden" in called_prompt
+    assert "plan actions that target these regions" in called_prompt
+
+

@@ -9,7 +9,9 @@ from typing import Any, Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +98,25 @@ def verify_auth_token(auth_header: Optional[str] = Header(None, alias="Authoriza
 
 class RedactionMapItem(BaseModel):
     bbox: list[float]
-    category: str
-    source: str
-    confidence: float
+    category: Optional[str] = None
+    type: Optional[str] = None
+    source: Optional[str] = "dom"
+    confidence: Optional[float] = 1.0
+
+    model_config = {"extra": "allow"}
+
+    @model_validator(mode="after")
+    def populate_type_category(self) -> "RedactionMapItem":
+        val = self.type or self.category or "redacted"
+        if not self.type:
+            self.type = val
+        if not self.category:
+            self.category = val
+        return self
+
+    @property
+    def region_type(self) -> str:
+        return self.type or self.category or "redacted"
 
 
 class PlanRequest(BaseModel):
@@ -106,7 +124,8 @@ class PlanRequest(BaseModel):
     dom_skeleton: list[Any] | dict[str, Any]
     image_base64: str
     viewport: dict[str, Any]
-    redaction_map: list[RedactionMapItem]
+    redaction_map: list[RedactionMapItem] = Field(default_factory=list)
+    redacted_regions: Optional[list[RedactionMapItem]] = None
     coordinate_space: Optional[str] = "viewport"
     image: Optional[dict[str, Any]] = None
     ui_elements: Optional[list[Any]] = None
@@ -122,6 +141,13 @@ class PlanRequest(BaseModel):
         deprecated=True,
         description="Deprecated: Upstream VLM provider credentials must be configured server-side via VLM_API_KEY. Client-supplied provider keys are ignored when server env key is set.",
     )
+    @model_validator(mode="after")
+    def sync_redacted_regions(self) -> "PlanRequest":
+        if self.redacted_regions and not self.redaction_map:
+            self.redaction_map = self.redacted_regions
+        elif self.redaction_map and not self.redacted_regions:
+            self.redacted_regions = self.redaction_map
+        return self
 
 
 
@@ -446,6 +472,7 @@ def plan(
             model=payload.model,
             base_url=payload.base_url,
             api_key=effective_api_key,
+            redacted_regions=payload.redacted_regions,
         )
     except HTTPException:
         raise
