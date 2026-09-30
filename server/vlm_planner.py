@@ -236,6 +236,53 @@ def format_redacted_regions_prompt(
     return "\n".join(lines)
 
 
+def compact_dom(node: Any, depth: int = 0, max_depth: int = 5) -> Any:
+    """Recursively prunes DOM skeleton nodes to retain interactive/semantic attributes while shedding bulk."""
+    if depth > max_depth:
+        return None
+    if isinstance(node, list):
+        pruned_list = []
+        for item in node[:35]:
+            p = compact_dom(item, depth + 1, max_depth)
+            if p is not None:
+                pruned_list.append(p)
+        return pruned_list
+    if not isinstance(node, dict):
+        return node
+
+    tag = (node.get("tag") or node.get("tagName") or "").lower()
+    role = node.get("role")
+    interactive_tags = {"button", "input", "select", "textarea", "a", "form", "option"}
+    is_interactive = tag in interactive_tags or bool(role) or bool(node.get("onclick")) or bool(node.get("href"))
+
+    compact: Dict[str, Any] = {"tag": tag} if tag else {}
+    for k in ("id", "name", "type", "role", "selector", "placeholder"):
+        val = node.get(k)
+        if val:
+            compact[k] = val
+
+    text = node.get("text") or node.get("innerText") or node.get("value")
+    if text and isinstance(text, str):
+        text_clean = text.strip()
+        if text_clean:
+            compact["text"] = text_clean[:80]
+
+    children = node.get("children")
+    if isinstance(children, list) and children:
+        compact_children = []
+        for c in children:
+            pruned_child = compact_dom(c, depth + 1, max_depth)
+            if pruned_child is not None:
+                compact_children.append(pruned_child)
+        if compact_children:
+            compact["children"] = compact_children
+
+    if not is_interactive and not compact.get("children") and not compact.get("text") and not compact.get("id") and not compact.get("name") and not compact.get("selector"):
+        return None
+
+    return compact
+
+
 def build_planner_prompt(
     task: str,
     dom_skeleton: Any,
@@ -250,7 +297,19 @@ def build_planner_prompt(
     parts.append(f"VIEWPORT: {json.dumps(active_viewport)}\n")
 
     if ui_elements:
-        ui_str = json.dumps(ui_elements, separators=(',', ':'))
+        compact_ui = []
+        for elem in ui_elements[:20]:
+            if isinstance(elem, dict):
+                c_elem = {}
+                for k in ("id", "element_id", "label", "category", "bbox", "text"):
+                    if elem.get(k) is not None:
+                        c_elem[k] = elem[k]
+                compact_ui.append(c_elem)
+            else:
+                compact_ui.append(elem)
+        ui_str = json.dumps(compact_ui, separators=(',', ':'))
+        if len(ui_str) > 2500:
+            ui_str = ui_str[:2500] + "... [truncated]"
         parts.append(
             "DETECTED UI ELEMENTS:\n"
             f"{UNTRUSTED_CONTENT_START}\n"
@@ -266,9 +325,11 @@ def build_planner_prompt(
             parts.append(f"{redaction_section}\n")
 
     if dom_skeleton:
-        dom_str = json.dumps(dom_skeleton, separators=(',', ':'))
-        if len(dom_str) > 25000:
-            dom_str = dom_str[:25000] + "... [truncated for context limit]"
+        pruned_skeleton = compact_dom(dom_skeleton)
+        dom_to_serialize = pruned_skeleton if pruned_skeleton is not None else dom_skeleton
+        dom_str = json.dumps(dom_to_serialize, separators=(',', ':'))
+        if len(dom_str) > 4000:
+            dom_str = dom_str[:4000] + "... [truncated for context limit]"
         parts.append(
             "DOM SKELETON:\n"
             f"{UNTRUSTED_CONTENT_START}\n"
@@ -470,7 +531,7 @@ def call_openai_compatible(
                 {"role": "user", "content": user_content},
             ],
             "response_format": {"type": "json_object"},
-            "max_tokens": 1024,
+            "max_tokens": 256,
         }
 
     headers = {"Content-Type": "application/json"}
@@ -482,13 +543,13 @@ def call_openai_compatible(
         payload = build_req_payload(include_image=has_image)
         resp = client.post(url, headers=headers, json=payload)
 
-        # If provider returns 400 Bad Request and we sent an image, check if model does not support image input
-        if resp.status_code == 400 and has_image:
+        # If provider returns error and we sent an image, check for vision incompatibility or token/rate limits
+        if resp.status_code in (400, 413, 429) and has_image:
             err_text = resp.text.lower()
-            if any(term in err_text for term in ["image", "vision", "multimodal", "unsupported", "invalid_request_error", "not support"]):
+            if any(term in err_text for term in ["image", "vision", "multimodal", "unsupported", "invalid_request_error", "not support", "limit", "requested", "rate_limit", "tpm", "tokens", "too large", "reduce the length"]):
                 logger.warning(
-                    f"[VLM] Model '{active_model}' rejected image input: {resp.text[:140]}. "
-                    "Retrying with text + DOM skeleton only..."
+                    f"[VLM] Provider rejected image or exceeded token limit ({resp.status_code}): {resp.text[:140]}. "
+                    "Retrying with compact text + DOM skeleton only..."
                 )
                 payload_text_only = build_req_payload(include_image=False)
                 resp = client.post(url, headers=headers, json=payload_text_only)
