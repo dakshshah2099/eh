@@ -2,28 +2,28 @@
 
 // LiteLLM provider → { hint, needsBaseUrl }
 const PROVIDER_META = {
-  openai:           { hint: 'gpt-4o, gpt-4o-mini, o1-mini', needsBaseUrl: false },
+  openai:           { hint: 'gpt-4o, gpt-4o-mini', needsBaseUrl: false },
   anthropic:        { hint: 'claude-3-5-sonnet-20241022, claude-3-haiku-20240307', needsBaseUrl: false },
-  gemini:           { hint: 'gemini/gemini-2.0-flash, gemini/gemini-1.5-pro', needsBaseUrl: false },
-  vertex_ai:        { hint: 'vertex_ai/gemini-2.0-flash', needsBaseUrl: false },
-  azure:            { hint: 'azure/<deployment-name>', needsBaseUrl: true  },
-  bedrock:          { hint: 'bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0', needsBaseUrl: false },
-  groq:             { hint: 'groq/llama-3.3-70b-versatile, groq/gemma2-9b-it', needsBaseUrl: false },
-  cerebras:         { hint: 'cerebras/llama3.1-8b', needsBaseUrl: false },
-  fireworks_ai:     { hint: 'fireworks_ai/accounts/fireworks/models/llama-v3p1-8b-instruct', needsBaseUrl: false },
-  together_ai:      { hint: 'together_ai/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo', needsBaseUrl: false },
-  deepinfra:        { hint: 'deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo', needsBaseUrl: false },
-  sambanova:        { hint: 'sambanova/Meta-Llama-3.1-8B-Instruct', needsBaseUrl: false },
-  deepseek:         { hint: 'deepseek/deepseek-chat, deepseek/deepseek-reasoner', needsBaseUrl: false },
-  mistral:          { hint: 'mistral/mistral-large-latest, mistral/codestral-latest', needsBaseUrl: false },
+  gemini:           { hint: 'gemini-2.0-flash, gemini-1.5-pro', needsBaseUrl: false },
+  vertex_ai:        { hint: 'gemini-2.0-flash', needsBaseUrl: false },
+  azure:            { hint: '<deployment-name>', needsBaseUrl: true  },
+  bedrock:          { hint: 'anthropic.claude-3-5-sonnet-20241022-v2:0', needsBaseUrl: false },
+  groq:             { hint: 'qwen/qwen3.8-27b', needsBaseUrl: false },
+  cerebras:         { hint: 'llama3.1-8b', needsBaseUrl: false },
+  fireworks_ai:     { hint: 'accounts/fireworks/models/llama-v3p2-11b-vision-instruct', needsBaseUrl: false },
+  together_ai:      { hint: 'meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo', needsBaseUrl: false },
+  deepinfra:        { hint: 'meta-llama/Llama-3.2-11B-Vision-Instruct', needsBaseUrl: false },
+  sambanova:        { hint: 'Llama-3.2-11B-Vision-Instruct', needsBaseUrl: false },
+  deepseek:         { hint: 'deepseek-chat', needsBaseUrl: false },
+  mistral:          { hint: 'pixtral-12b-2409, mistral-large-latest', needsBaseUrl: false },
   cohere:           { hint: 'command-r-plus, command-r', needsBaseUrl: false },
-  xai:              { hint: 'xai/grok-2-latest, xai/grok-3-mini', needsBaseUrl: false },
-  perplexity:       { hint: 'perplexity/sonar-pro, perplexity/sonar', needsBaseUrl: false },
-  openrouter:       { hint: 'openrouter/meta-llama/llama-3.3-70b-instruct', needsBaseUrl: false },
-  ollama:           { hint: 'ollama/llama3.2, ollama/qwen2.5-coder', needsBaseUrl: true  },
-  vllm:             { hint: 'hosted_vllm/meta-llama/Llama-3.1-8B-Instruct', needsBaseUrl: true  },
-  lm_studio:        { hint: 'lm_studio/qwen2.5-14b-instruct', needsBaseUrl: true  },
-  openai_compatible:{ hint: 'openai/<model-name>', needsBaseUrl: true  },
+  xai:              { hint: 'grok-2-vision-1212', needsBaseUrl: false },
+  perplexity:       { hint: 'sonar-pro, sonar', needsBaseUrl: false },
+  openrouter:       { hint: 'meta-llama/llama-3.2-11b-vision-instruct:free', needsBaseUrl: false },
+  ollama:           { hint: 'llama3.2-vision, llama3.2', needsBaseUrl: true  },
+  vllm:             { hint: 'meta-llama/Llama-3.2-11B-Vision-Instruct', needsBaseUrl: true  },
+  lm_studio:        { hint: 'llama-3.2-vision', needsBaseUrl: true  },
+  openai_compatible:{ hint: '<model-name>', needsBaseUrl: true  },
 };
 
 const DEFAULT_BASE_URLS = {
@@ -305,12 +305,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (typeof chrome !== 'undefined' && chrome.storage?.session?.set) {
       chrome.storage.session.set({
-        agentState: {
-          isRunning: true,
-          currentTask: task,
-          lastStartedAt: Date.now(),
-          stepCount: 0
-        },
         agentStatusLog: []
       });
     }

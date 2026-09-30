@@ -1,7 +1,11 @@
 // Zero-dependency local static server for demo harness & redaction testing
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const PUBLIC_DIR = __dirname;

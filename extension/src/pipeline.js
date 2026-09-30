@@ -246,19 +246,36 @@ export function assertPayloadSanitized(sanitizedPayload, rawDom, rawImage = '') 
     }
   }
 
-  // 2. DOM sanity check - inspect for cleartext passwords or sensitive keywords
+  // 2. DOM sanity check - inspect for cleartext passwords, SSNs, credit cards, or sensitive keywords
   const domJson = JSON.stringify(sanitizedPayload.dom_skeleton || '');
-  const sensitiveChecks = [
-    /(?:value|password|passwd)":\s*"[^"]{6,}"/i,
+  const sensitivePiiChecks = [
     /\b\d{3}-\d{2}-\d{4}\b/, // SSN format
-    /\b(?:\d{4}[ -]?){3}\d{4}\b/ // Credit card format
+    /\b(?:\d{4}[ -]?){3}\d{4}\b/, // Credit card format
+    /(?:secret|plaintext|cleartext)[-_ ]?password/i, // Explicit cleartext secret/password values
+    /(?:password|passwd|passcode)":\s*"(?!\[REDACTED_)[^"]+"/i // Cleartext password/passcode properties
   ];
 
-  for (const pattern of sensitiveChecks) {
-    if (pattern.test(domJson) && !domJson.includes('[REDACTED_')) {
+  for (const pattern of sensitivePiiChecks) {
+    if (pattern.test(domJson)) {
       throw new Error('[Pipeline] SecurityError: Potential unredacted sensitive pattern detected in sanitized DOM');
     }
   }
+
+  // Inspect tree nodes for password inputs with unredacted values
+  function checkDomSkeletonNode(node) {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'password' || node.category === 'password') {
+      if (node.value && typeof node.value === 'string' && !node.value.startsWith('[REDACTED_')) {
+        throw new Error('[Pipeline] SecurityError: Potential unredacted sensitive pattern detected in sanitized DOM (unredacted password field)');
+      }
+    }
+    if (Array.isArray(node.children)) {
+      for (const child of node.children) {
+        checkDomSkeletonNode(child);
+      }
+    }
+  }
+  checkDomSkeletonNode(sanitizedPayload.dom_skeleton);
 
   // 3. Redaction map sanity check - assert no UI vision items in redaction_map (Ticket 01 / C1)
   if (Array.isArray(sanitizedPayload.redaction_map)) {

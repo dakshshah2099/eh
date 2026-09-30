@@ -203,3 +203,22 @@ test('background.js handles GET_STATUS_LOG and CLEAR_STATUS_LOG messages', async
   assert.equal(getLogRes2.success, true);
   assert.deepEqual(getLogRes2.log, []);
 });
+
+test('background.js heals stale isRunning in GET_STATUS and avoids duplicate start lock when idle', async () => {
+  const listener = messageListeners[0];
+
+  // Set fake stale running state in storage
+  if (globalThis.chrome?.storage?.session?.set) {
+    await globalThis.chrome.storage.session.set({
+      agentState: { isRunning: true, currentTask: 'Old stuck task' }
+    });
+  }
+
+  // GET_STATUS should detect activeLoopPromise is null and heal isRunning to false
+  const statusRes = await new Promise(resolve => {
+    listener({ type: 'GET_STATUS' }, {}, resolve);
+  });
+  assert.equal(statusRes.success, true);
+  assert.equal(statusRes.state.isRunning, false);
+});
+

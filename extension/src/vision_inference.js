@@ -291,7 +291,9 @@ export async function parseImageInput(input) {
   if (typeof input.getContext === 'function') {
     const width = Math.round(input.width);
     const height = Math.round(input.height);
-    const ctx = input.getContext('2d');
+    const ctx = (typeof input.getContext === 'function')
+      ? (input.getContext('2d', { willReadFrequently: true }) || input.getContext('2d'))
+      : null;
     if (ctx && typeof ctx.getImageData === 'function') {
       const imgData = ctx.getImageData(0, 0, width, height);
       return { width, height, data: imgData.data };

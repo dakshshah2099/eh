@@ -660,6 +660,9 @@ export async function startLoop(tabId = null, task = '', options = {}) {
           // If onConfirmAction callback was provided in opts (e.g. test harness), use it
           if (typeof opts.onConfirmAction === 'function') {
             await enforceConfirmationGate(act, opts);
+          } else if (!opts.interactiveConfirmation && (opts.throwOnConfirmationRequired || (typeof process !== 'undefined' && Boolean(process?.versions?.node)))) {
+            // In Node.js unit tests or headless runs without live interactive UI, throw ConfirmationRequired
+            await enforceConfirmationGate(act, opts);
           } else {
             // Live extension mode: broadcast CONFIRM_ACTION_REQUIRED to popup and wait
             console.log(`[Background] Pausing loop for risky action approval at step ${step}:`, act);
@@ -1069,6 +1072,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
       switch (message.type) {
         case 'GET_STATUS': {
           const state = await ensureState();
+          if (!activeLoopPromise && state.isRunning) {
+            state.isRunning = false;
+            agentState.isRunning = false;
+            await updateAgentState();
+          }
           sendResponse({ success: true, state });
           break;
         }
@@ -1076,16 +1084,15 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
         case 'START_LOOP':
         case 'START_AGENT_LOOP':
         case 'START_AGENT': {
-          // Guard: prevent duplicate start races
-          const state = await ensureState();
-          if (state.isRunning) {
+          // Guard: prevent duplicate start races when loop is actively executing
+          if (activeLoopPromise) {
             sendResponse({ success: true, isRunning: true, message: 'Agent already running' });
             break;
           }
 
           const tabId = message.tabId ?? null;
           const task = message.task || message.taskDescription || '';
-          const options = message.options || message;
+          const options = Object.assign({}, message.options || message, { interactiveConfirmation: true });
 
           // Optimistic early state update in storage and memory before async loop init
           agentState.isRunning = true;

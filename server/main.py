@@ -139,7 +139,7 @@ class PlanRequest(BaseModel):
     api_key: Optional[str] = Field(
         default=None,
         deprecated=True,
-        description="Deprecated: Upstream VLM provider credentials must be configured server-side via VLM_API_KEY. Client-supplied provider keys are ignored when server env key is set.",
+        description="Upstream VLM provider credentials configured via extension frontend or server environment.",
     )
     @model_validator(mode="after")
     def sync_redacted_regions(self) -> "PlanRequest":
@@ -445,19 +445,19 @@ def plan(
     if saved_file:
         print(f"[Debug] Saved redacted screenshot to {saved_file.resolve()}")
 
-    # 4. Provider credential security & deprecation check (C16)
+    # 4. Provider credential security check
     server_vlm_key = os.getenv("VLM_API_KEY") or os.getenv("OPENAI_API_KEY", "")
     effective_api_key = payload.api_key
     if payload.api_key:
         if server_vlm_key:
             logger.warning(
-                "Client supplied deprecated PlanRequest.api_key, but server-side "
-                "VLM_API_KEY is configured. Client key is ignored in favor of server env key."
+                "Client supplied PlanRequest.api_key, but server-side "
+                "VLM_API_KEY is configured. Server VLM_API_KEY takes precedence."
             )
-            effective_api_key = None
+            effective_api_key = server_vlm_key
         else:
-            logger.warning(
-                "PlanRequest.api_key is deprecated: configure VLM_API_KEY in server environment instead."
+            logger.info(
+                "Using client-supplied VLM API key from extension frontend."
             )
 
     try:

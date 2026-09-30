@@ -169,7 +169,8 @@ test('startLoop executes action, waits for DOM settle, recaptures, and completes
     const loopResult = await bg.startLoop(101, 'Search for wireless mouse', {
       serverUrl: mockServerUrl,
       maxSteps: 5,
-      domSettleDelay: 50
+      domSettleDelay: 50,
+      onConfirmAction: async () => true
     });
 
     assert.equal(loopResult.success, true);

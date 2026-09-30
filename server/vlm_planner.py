@@ -250,11 +250,12 @@ def build_planner_prompt(
     parts.append(f"VIEWPORT: {json.dumps(active_viewport)}\n")
 
     if ui_elements:
+        ui_str = json.dumps(ui_elements, separators=(',', ':'))
         parts.append(
             "DETECTED UI ELEMENTS:\n"
             f"{UNTRUSTED_CONTENT_START}\n"
             "<untrusted_ui_elements>\n"
-            f"{json.dumps(ui_elements, indent=2)}\n"
+            f"{ui_str}\n"
             "</untrusted_ui_elements>\n"
             f"{UNTRUSTED_CONTENT_END}\n"
         )
@@ -265,11 +266,14 @@ def build_planner_prompt(
             parts.append(f"{redaction_section}\n")
 
     if dom_skeleton:
+        dom_str = json.dumps(dom_skeleton, separators=(',', ':'))
+        if len(dom_str) > 25000:
+            dom_str = dom_str[:25000] + "... [truncated for context limit]"
         parts.append(
             "DOM SKELETON:\n"
             f"{UNTRUSTED_CONTENT_START}\n"
             "<untrusted_dom_skeleton>\n"
-            f"{json.dumps(dom_skeleton, indent=2)}\n"
+            f"{dom_str}\n"
             "</untrusted_dom_skeleton>\n"
             f"{UNTRUSTED_CONTENT_END}\n"
         )
@@ -410,6 +414,16 @@ def call_ollama(
         return data.get("response", "")
 
 
+def clean_model_name(model_name: str, provider: str = "") -> str:
+    """Strips outer provider prefix e.g. 'groq/qwen/qwen3.8-27b' -> 'qwen/qwen3.8-27b' while preserving namespaces like 'qwen/'."""
+    if not model_name:
+        return model_name
+    m = model_name.strip()
+    if provider and m.lower().startswith(f"{provider.lower()}/"):
+        m = m[len(provider) + 1:]
+    return m
+
+
 def call_openai_compatible(
     prompt: str,
     image_base64: str,
@@ -417,9 +431,11 @@ def call_openai_compatible(
     model: Optional[str] = None,
     api_key: Optional[str] = None,
     timeout: Optional[float] = None,
+    provider: Optional[str] = None,
 ) -> str:
     active_base_url = base_url or get_openai_base_url()
-    active_model = model or get_vlm_model()
+    raw_model = model or get_vlm_model()
+    active_model = clean_model_name(raw_model, provider or "")
     active_api_key = api_key if api_key is not None else get_openai_api_key()
     active_timeout = timeout if timeout is not None else get_vlm_timeout()
 
@@ -433,21 +449,29 @@ def call_openai_compatible(
         elif "image/webp" in header:
             mime_type = "image/webp"
 
-    user_content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
-    if clean_b64.strip():
-        user_content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:{mime_type};base64,{clean_b64.strip()}"}
-        })
+    has_image = bool(clean_b64.strip())
 
-    payload = {
-        "model": active_model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        "response_format": {"type": "json_object"},
-    }
+    def build_req_payload(include_image: bool) -> dict:
+        if include_image and has_image:
+            user_content: Any = [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime_type};base64,{clean_b64.strip()}"}
+                }
+            ]
+        else:
+            user_content = prompt
+
+        return {
+            "model": active_model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            "response_format": {"type": "json_object"},
+            "max_tokens": 1024,
+        }
 
     headers = {"Content-Type": "application/json"}
     if active_api_key:
@@ -455,7 +479,24 @@ def call_openai_compatible(
 
     url = active_base_url if active_base_url.endswith("/chat/completions") else f"{active_base_url.rstrip('/')}/chat/completions"
     with httpx.Client(timeout=active_timeout) as client:
+        payload = build_req_payload(include_image=has_image)
         resp = client.post(url, headers=headers, json=payload)
+
+        # If provider returns 400 Bad Request and we sent an image, check if model does not support image input
+        if resp.status_code == 400 and has_image:
+            err_text = resp.text.lower()
+            if any(term in err_text for term in ["image", "vision", "multimodal", "unsupported", "invalid_request_error", "not support"]):
+                logger.warning(
+                    f"[VLM] Model '{active_model}' rejected image input: {resp.text[:140]}. "
+                    "Retrying with text + DOM skeleton only..."
+                )
+                payload_text_only = build_req_payload(include_image=False)
+                resp = client.post(url, headers=headers, json=payload_text_only)
+
+        if resp.is_error:
+            logger.error(f"[VLM] Provider API error ({resp.status_code}): {resp.text}")
+            print(f"[VLM Error {resp.status_code}] {resp.text}")
+
         resp.raise_for_status()
         data = resp.json()
         return data["choices"][0]["message"]["content"]
@@ -580,6 +621,7 @@ def generate_plan(
                 base_url=resolve_provider_base_url(active_provider, base_url),
                 model=active_model,
                 api_key=effective_api_key,
+                provider=active_provider,
             )
         elif active_provider in ("ollama", "llava", "llama3.2-vision") or active_provider.startswith("ollama"):
             raw_response = call_ollama(
