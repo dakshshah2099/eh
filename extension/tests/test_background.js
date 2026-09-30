@@ -170,3 +170,36 @@ test('background.js handles CAPTURE_AND_SEND_PLAN end-to-end', async () => {
   assert.deepEqual(res.payload.viewport, { width: 1280, height: 720 });
   assert.equal(res.plan.actions[0].type, 'click');
 });
+
+test('background.js handles GET_STATUS_LOG and CLEAR_STATUS_LOG messages', async () => {
+  const listener = messageListeners[0];
+
+  // Record an event first
+  await bg.recordAgentStatus({
+    event: 'STEP_STARTED',
+    step: 1,
+    message: 'Step 1 started'
+  });
+
+  // GET_STATUS_LOG
+  const getLogRes = await new Promise(resolve => {
+    listener({ type: 'GET_STATUS_LOG' }, {}, resolve);
+  });
+  assert.equal(getLogRes.success, true);
+  assert.ok(Array.isArray(getLogRes.log));
+  assert.ok(getLogRes.log.length > 0);
+  assert.equal(getLogRes.log[getLogRes.log.length - 1].event, 'STEP_STARTED');
+
+  // CLEAR_STATUS_LOG
+  const clearRes = await new Promise(resolve => {
+    listener({ type: 'CLEAR_STATUS_LOG' }, {}, resolve);
+  });
+  assert.equal(clearRes.success, true);
+
+  // Verify cleared
+  const getLogRes2 = await new Promise(resolve => {
+    listener({ type: 'GET_STATUS_LOG' }, {}, resolve);
+  });
+  assert.equal(getLogRes2.success, true);
+  assert.deepEqual(getLogRes2.log, []);
+});

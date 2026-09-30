@@ -90,6 +90,130 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const statusLogPanel = document.getElementById('statusLogPanel');
+  const clearLogBtn    = document.getElementById('clearLogBtn');
+
+  // ── Activity Stream / Status Log Panel ───────────────────────────────────
+  function clearStatusLogUI() {
+    if (!statusLogPanel) return;
+    statusLogPanel.innerHTML = '';
+    const empty = document.createElement('div');
+    empty.className = 'log-empty-msg';
+    empty.id = 'logEmptyMsg';
+    empty.textContent = 'No activity yet';
+    statusLogPanel.appendChild(empty);
+  }
+
+  function appendStatusLogEntry(item) {
+    if (!statusLogPanel || !item) return;
+
+    // Remove empty placeholder
+    const empty = document.getElementById('logEmptyMsg');
+    if (empty) {
+      empty.remove();
+    }
+
+    const row = document.createElement('div');
+    const ev = (item.event || item.type || '').toUpperCase();
+
+    let entryClass = 'log-entry';
+    if (ev === 'TASK_DONE') {
+      entryClass += ' log-entry-done';
+    } else if (ev === 'TASK_EXHAUSTED') {
+      entryClass += ' log-entry-exhausted';
+    } else if (ev === 'LOOP_ERROR' || item.error || item.level === 'error') {
+      entryClass += ' log-entry-error';
+    } else if (ev === 'STEP_STARTED') {
+      entryClass += ' log-entry-step';
+    } else if (ev === 'ACTION_DECIDED' || ev === 'ACTION_EXECUTED') {
+      entryClass += ' log-entry-action';
+    }
+    row.className = entryClass;
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'log-time';
+    const ts = item.timestamp ? new Date(item.timestamp) : new Date();
+    timeSpan.textContent = `[${ts.toLocaleTimeString()}]`;
+
+    const msgSpan = document.createElement('span');
+    msgSpan.className = 'log-msg';
+
+    let text = item.message;
+    if (ev === 'TASK_DONE') {
+      text = item.reason ? `✓ Done — ${item.reason}` : (item.message || '✓ Done');
+    } else if (ev === 'TASK_EXHAUSTED') {
+      text = '⚠ Step limit reached';
+    } else if (ev === 'LOOP_ERROR') {
+      text = item.error ? `Error: ${item.error}` : (item.message || 'Error occurred');
+    } else if (!text) {
+      if (ev === 'STEP_STARTED') {
+        text = `Step ${item.step}/${item.maxSteps || '?'} started`;
+      } else if (ev === 'ACTION_DECIDED') {
+        text = `Action decided: ${item.actionType || 'unknown'}${item.target ? ' on ' + item.target : ''}`;
+      } else if (ev === 'ACTION_EXECUTED') {
+        text = `Action executed: ${item.actionType || 'unknown'}${item.target ? ' on ' + item.target : ''} (${item.success ? 'success' : 'failed'})`;
+      } else {
+        text = JSON.stringify(item);
+      }
+    }
+    msgSpan.textContent = text;
+
+    row.appendChild(timeSpan);
+    row.appendChild(msgSpan);
+    statusLogPanel.appendChild(row);
+
+    statusLogPanel.scrollTop = statusLogPanel.scrollHeight;
+  }
+
+  function restoreStatusLog() {
+    function handleEvents(events) {
+      if (Array.isArray(events) && events.length > 0) {
+        clearStatusLogUI();
+        const empty = document.getElementById('logEmptyMsg');
+        if (empty) empty.remove();
+        for (const ev of events) {
+          appendStatusLogEntry(ev);
+        }
+      }
+    }
+
+    if (typeof chrome !== 'undefined' && chrome.storage?.session?.get) {
+      chrome.storage.session.get(['agentStatusLog'], (data) => {
+        if (!chrome.runtime?.lastError && Array.isArray(data?.agentStatusLog) && data.agentStatusLog.length > 0) {
+          handleEvents(data.agentStatusLog);
+        } else {
+          fetchStatusLogViaMessage();
+        }
+      });
+    } else {
+      fetchStatusLogViaMessage();
+    }
+
+    function fetchStatusLogViaMessage() {
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ type: 'GET_STATUS_LOG' }, (res) => {
+          if (!chrome.runtime?.lastError && res && res.success && Array.isArray(res.log) && res.log.length > 0) {
+            handleEvents(res.log);
+          }
+        });
+      }
+    }
+  }
+
+  if (clearLogBtn) {
+    clearLogBtn.addEventListener('click', () => {
+      clearStatusLogUI();
+      if (typeof chrome !== 'undefined') {
+        if (chrome.storage?.session?.set) {
+          chrome.storage.session.set({ agentStatusLog: [] });
+        }
+        if (chrome.runtime?.sendMessage) {
+          chrome.runtime.sendMessage({ type: 'CLEAR_STATUS_LOG' }, () => {});
+        }
+      }
+    });
+  }
+
   toggleBtn.addEventListener('click', () => {
     toggleBtn.disabled = true;
     const isStarting = !currentRunning;
@@ -97,6 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Optimistic UI — flip immediately for crisp feedback
     if (isStarting) {
+      clearStatusLogUI();
       updateUI(true, Date.now(), null);
       statusInfo.textContent = 'Starting agent\u2026';
     } else {
@@ -131,6 +256,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Reactive state sync whenever background writes agentState to storage
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'session' && changes.agentStatusLog) {
+        const newLog = changes.agentStatusLog.newValue;
+        if (Array.isArray(newLog) && newLog.length === 0) {
+          clearStatusLogUI();
+        }
+      }
       if (area === 'local') {
         if (changes.agentState) {
           const state = changes.agentState.newValue;
@@ -156,11 +287,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Listen for task completion or exhaustion runtime messages
+  // Listen for task completion, exhaustion, and live agent status runtime messages
   if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message) => {
       if (!message || typeof message !== 'object') return;
-      if (message.type === 'TASK_DONE') {
+      if (message.type === 'AGENT_STATUS') {
+        if (message.event === 'STEP_STARTED' && message.step === 1) {
+          clearStatusLogUI();
+        }
+        appendStatusLogEntry(message);
+      } else if (message.type === 'TASK_DONE') {
         updateUI(false, null, Date.now());
         const reasonText = message.reason ? `: ${message.reason}` : '';
         statusInfo.textContent = `Task done in ${message.stepCount ?? message.steps ?? 1} step(s)${reasonText}`;
@@ -601,6 +737,11 @@ document.addEventListener('DOMContentLoaded', () => {
       renderSecretsList,
       refreshSecrets
     };
+    window.StatusLog = {
+      appendStatusLogEntry,
+      clearStatusLogUI,
+      restoreStatusLog
+    };
   }
 
   // ── Initial loads ────────────────────────────────────────────────────────
@@ -608,4 +749,5 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchRuntimeStatus();
   fetchHighlightStatus();
   refreshSecrets();
+  restoreStatusLog();
 });

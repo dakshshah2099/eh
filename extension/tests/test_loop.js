@@ -11,6 +11,8 @@ let actionsExecuted = [];
 let domSkeletonRequests = 0;
 let runtimeMessagesSent = [];
 
+let sessionData = {};
+
 globalThis.chrome = {
   runtime: {
     getURL: (path) => `chrome-extension://mock-id/${path}`,
@@ -34,6 +36,17 @@ globalThis.chrome = {
     local: {
       get: async (key) => (typeof key === 'string' ? { [key]: storedData[key] } : storedData),
       set: async (obj) => { Object.assign(storedData, obj); }
+    },
+    session: {
+      get: async (key) => {
+        if (Array.isArray(key)) {
+          const res = {};
+          for (const k of key) res[k] = sessionData[k];
+          return res;
+        }
+        return typeof key === 'string' ? { [key]: sessionData[key] } : { ...sessionData };
+      },
+      set: async (obj) => { Object.assign(sessionData, obj); }
     }
   },
   tabs: {
@@ -655,5 +668,274 @@ test('Ticket 01: startLoop broadcasts TASK_EXHAUSTED when maxSteps reached witho
     server.close();
   }
 });
+
+test('Ticket 04: startLoop sends AGENT_STATUS messages for each loop event (STEP_STARTED, ACTION_DECIDED, ACTION_EXECUTED, TASK_DONE)', async () => {
+  actionsExecuted = [];
+  runtimeMessagesSent = [];
+  sessionData = {};
+  let planCount = 0;
+
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      planCount++;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (planCount === 1) {
+        res.end(JSON.stringify({
+          actions: [{ type: 'click', target_selector: 'button#save-profile', reason: 'Save profile changes' }],
+          task_complete: false,
+          confidence: 0.95
+        }));
+      } else {
+        res.end(JSON.stringify({
+          actions: [{ action: 'done', reason: 'Profile updated successfully' }],
+          task_complete: true,
+          confidence: 0.99
+        }));
+      }
+    });
+  });
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  const mockServerUrl = `http://127.0.0.1:${port}/api/plan`;
+
+  try {
+    const loopResult = await bg.startLoop(101, 'Save profile test', {
+      serverUrl: mockServerUrl,
+      maxSteps: 5,
+      domSettleDelay: 50
+    });
+
+    assert.equal(loopResult.success, true);
+    assert.equal(loopResult.taskComplete, true);
+
+    const statusEvents = runtimeMessagesSent.filter(m => m.type === 'AGENT_STATUS');
+    assert.ok(statusEvents.length >= 4, `Expected at least 4 AGENT_STATUS events, got ${statusEvents.length}`);
+
+    // Verify STEP_STARTED event
+    const step1Start = statusEvents.find(e => e.event === 'STEP_STARTED' && e.step === 1);
+    assert.ok(step1Start, 'STEP_STARTED event for step 1 should exist');
+    assert.equal(step1Start.maxSteps, 5);
+    assert.ok(step1Start.timestamp > 0);
+
+    // Verify ACTION_DECIDED event
+    const actionDecided = statusEvents.find(e => e.event === 'ACTION_DECIDED' && e.step === 1);
+    assert.ok(actionDecided, 'ACTION_DECIDED event should exist');
+    assert.equal(actionDecided.actionType, 'click');
+    assert.equal(actionDecided.target, 'button#save-profile');
+
+    // Verify ACTION_EXECUTED event
+    const actionExecuted = statusEvents.find(e => e.event === 'ACTION_EXECUTED' && e.step === 1);
+    assert.ok(actionExecuted, 'ACTION_EXECUTED event should exist');
+    assert.equal(actionExecuted.actionType, 'click');
+    assert.equal(actionExecuted.target, 'button#save-profile');
+    assert.equal(actionExecuted.success, true);
+
+    // Verify TASK_DONE event
+    const taskDoneStatus = statusEvents.find(e => e.event === 'TASK_DONE');
+    assert.ok(taskDoneStatus, 'TASK_DONE status event should exist');
+    assert.equal(taskDoneStatus.reason, 'Profile updated successfully');
+    assert.equal(taskDoneStatus.step, 2);
+  } finally {
+    server.close();
+  }
+});
+
+test('Ticket 04: startLoop sends AGENT_STATUS TASK_EXHAUSTED when step limit reached', async () => {
+  actionsExecuted = [];
+  runtimeMessagesSent = [];
+  sessionData = {};
+
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        actions: [{ type: 'scroll', deltaY: 20 }],
+        task_complete: false,
+        confidence: 0.8
+      }));
+    });
+  });
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  const mockServerUrl = `http://127.0.0.1:${port}/api/plan`;
+
+  try {
+    const loopResult = await bg.startLoop(101, 'Exhaustion test', {
+      serverUrl: mockServerUrl,
+      maxSteps: 2,
+      domSettleDelay: 50
+    });
+
+    assert.equal(loopResult.success, true);
+    assert.equal(loopResult.maxStepsReached, true);
+
+    const statusEvents = runtimeMessagesSent.filter(m => m.type === 'AGENT_STATUS');
+    const exhaustedEvent = statusEvents.find(e => e.event === 'TASK_EXHAUSTED');
+    assert.ok(exhaustedEvent, 'Expected AGENT_STATUS TASK_EXHAUSTED event');
+    assert.equal(exhaustedEvent.step, 2);
+    assert.equal(exhaustedEvent.maxSteps, 2);
+  } finally {
+    server.close();
+  }
+});
+
+test('Ticket 04: startLoop sends AGENT_STATUS LOOP_ERROR on fatal error', async () => {
+  actionsExecuted = [];
+  runtimeMessagesSent = [];
+  sessionData = {};
+
+  const server = http.createServer((req, res) => {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ detail: 'Internal model inference crash' }));
+  });
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  const mockServerUrl = `http://127.0.0.1:${port}/api/plan`;
+
+  try {
+    await assert.rejects(async () => {
+      await bg.startLoop(101, 'Failing task', {
+        serverUrl: mockServerUrl,
+        maxSteps: 2,
+        domSettleDelay: 50
+      });
+    });
+
+    const statusEvents = runtimeMessagesSent.filter(m => m.type === 'AGENT_STATUS');
+    const errorEvent = statusEvents.find(e => e.event === 'LOOP_ERROR');
+    assert.ok(errorEvent, 'Expected AGENT_STATUS LOOP_ERROR event');
+    assert.ok(errorEvent.error, 'Error property should exist on LOOP_ERROR event');
+  } finally {
+    server.close();
+  }
+});
+
+test('Ticket 04: chrome.storage.session stores recent events and clears on new task', async () => {
+  actionsExecuted = [];
+  runtimeMessagesSent = [];
+  sessionData = {};
+  let planCount = 0;
+
+  const server = http.createServer((req, res) => {
+    planCount++;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      actions: [{ action: 'done', reason: `Task run ${planCount} finished` }],
+      task_complete: true,
+      confidence: 0.99
+    }));
+  });
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  const mockServerUrl = `http://127.0.0.1:${port}/api/plan`;
+
+  try {
+    // Run Task 1
+    await bg.startLoop(101, 'Task 1', {
+      serverUrl: mockServerUrl,
+      maxSteps: 3,
+      domSettleDelay: 50,
+      taskId: 'task-111'
+    });
+
+    // Check sessionData received status events
+    const log1 = sessionData.agentStatusLog;
+    assert.ok(Array.isArray(log1) && log1.length > 0, 'sessionData.agentStatusLog should store events');
+    assert.ok(log1.every(e => e.taskId === 'task-111'), 'All events should belong to task-111');
+
+    // Run Task 2 (should clear prior log)
+    await bg.startLoop(101, 'Task 2', {
+      serverUrl: mockServerUrl,
+      maxSteps: 3,
+      domSettleDelay: 50,
+      taskId: 'task-222'
+    });
+
+    const log2 = sessionData.agentStatusLog;
+    assert.ok(Array.isArray(log2) && log2.length > 0);
+    // Crucial check: old task-111 events were cleared when task-222 started!
+    assert.ok(log2.every(e => e.taskId === 'task-222'), 'Task 2 start must clear old task-111 events from session storage');
+  } finally {
+    server.close();
+  }
+});
+
+test('Ticket 04: PII safety: raw sensitive field values are not leaked into status messages', async () => {
+  actionsExecuted = [];
+  runtimeMessagesSent = [];
+  sessionData = {};
+
+  let planCount = 0;
+  const server = http.createServer((req, res) => {
+    planCount++;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (planCount === 1) {
+      res.end(JSON.stringify({
+        actions: [
+          {
+            type: 'type',
+            target_selector: 'input#credit-card-number',
+            text: '4111-2222-3333-4444',
+            reason: 'Enter payment card number'
+          },
+          {
+            type: 'fill_secret',
+            target_selector: 'input#secret-pin',
+            secret_key: 'BANK_PIN_SECRET'
+          }
+        ],
+        task_complete: false,
+        confidence: 0.99
+      }));
+    } else {
+      res.end(JSON.stringify({
+        actions: [{ action: 'done', reason: 'Form submission completed' }],
+        task_complete: true,
+        confidence: 0.99
+      }));
+    }
+  });
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  const mockServerUrl = `http://127.0.0.1:${port}/api/plan`;
+
+  try {
+    await bg.startLoop(101, 'Fill sensitive form', {
+      serverUrl: mockServerUrl,
+      maxSteps: 3,
+      domSettleDelay: 50,
+      onConfirmAction: async () => true
+    });
+
+    const statusEvents = runtimeMessagesSent.filter(m => m.type === 'AGENT_STATUS');
+    assert.ok(statusEvents.length > 0);
+
+    const serialized = JSON.stringify(statusEvents);
+    // Raw sensitive field input value must NEVER appear anywhere in AGENT_STATUS messages
+    assert.equal(
+      serialized.includes('4111-2222-3333-4444'),
+      false,
+      'Raw credit card number / typed text must NOT be present in status messages'
+    );
+
+    // Target must report selector strings or element types, not values
+    const typeActionDecided = statusEvents.find(e => e.event === 'ACTION_DECIDED' && e.actionType === 'type');
+    assert.ok(typeActionDecided, 'Type ACTION_DECIDED should be recorded');
+    assert.equal(typeActionDecided.target, 'input#credit-card-number');
+    assert.equal(typeActionDecided.text, undefined);
+  } finally {
+    server.close();
+  }
+});
+
 
 

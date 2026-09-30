@@ -426,6 +426,72 @@ body {
   border-color: rgba(239, 68, 68, 0.3);
 }
 
+/* ── Activity Stream / Status Log Section ── */
+.status-log-panel {
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.log-empty-msg {
+  color: var(--text-muted);
+  font-style: italic;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+  padding: 6px 0;
+}
+
+.log-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.log-time {
+  color: var(--text-muted);
+  font-size: 10px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.log-msg {
+  flex: 1;
+  color: var(--text-main);
+}
+
+.log-entry-done .log-msg {
+  color: #34d399;
+  font-weight: 600;
+}
+
+.log-entry-exhausted .log-msg {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.log-entry-error .log-msg {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.log-entry-step .log-msg {
+  color: #93c5fd;
+}
+
+.log-entry-action .log-msg {
+  color: #e2e8f0;
+}
+
 .footer {
   text-align: center;
   font-size: 10px;

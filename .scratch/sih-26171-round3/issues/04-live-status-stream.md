@@ -4,11 +4,11 @@
 
 **Blocked by:** 01 — done action + clean loop exit (the `TASK_DONE` / `TASK_EXHAUSTED` message types must exist first)
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] The background sends a `AGENT_STATUS` message to the popup at each meaningful loop event: step started, action decided (with action type and target), action executed, task done, task exhausted, loop error
-- [ ] The popup listens for `AGENT_STATUS` messages via `chrome.runtime.onMessage` and appends each event to a visible status log panel (scrollable, timestamped)
-- [ ] `TASK_DONE` renders as a green "✓ Done — {reason}" entry; `TASK_EXHAUSTED` renders as an amber "⚠ Step limit reached" entry; errors render red
-- [ ] The status log is cleared when a new task is started
-- [ ] When the popup is closed and reopened mid-task, the status log is restored from the last N events stored in `chrome.storage.session` (so the user does not lose context)
-- [ ] No status message contains raw PII from the page (action targets are reported as selector strings or element types, not field values)
+- [x] The background sends a `AGENT_STATUS` message to the popup at each meaningful loop event: step started, action decided (with action type and target), action executed, task done, task exhausted, loop error
+- [x] The popup listens for `AGENT_STATUS` messages via `chrome.runtime.onMessage` and appends each event to a visible status log panel (scrollable, timestamped)
+- [x] `TASK_DONE` renders as a green "✓ Done — {reason}" entry; `TASK_EXHAUSTED` renders as an amber "⚠ Step limit reached" entry; errors render red
+- [x] The status log is cleared when a new task is started
+- [x] When the popup is closed and reopened mid-task, the status log is restored from the last N events stored in `chrome.storage.session` (so the user does not lose context)
+- [x] No status message contains raw PII from the page (action targets are reported as selector strings or element types, not field values)

@@ -306,6 +306,114 @@ export function broadcastTaskMessage(message) {
   } catch (_) {}
 }
 
+export const MAX_STATUS_EVENTS = 50;
+
+/**
+ * Returns session storage provider (falling back to local if session unavailable).
+ * @returns {object|null}
+ */
+export function getSessionStorage() {
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
+    return chrome.storage.session;
+  }
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    return chrome.storage.local;
+  }
+  return null;
+}
+
+/**
+ * Extracts a sanitized, non-PII target locator string from an action.
+ * Ensures field text/values are NEVER included.
+ *
+ * @param {object} act
+ * @returns {string}
+ */
+export function getSanitizedActionTarget(act) {
+  if (!act || typeof act !== 'object') return '';
+  if (act.target_selector) return String(act.target_selector);
+  if (act.selector) return String(act.selector);
+  if (act.element_id) return `#${act.element_id}`;
+  if (act.target_element_id) return `#${act.target_element_id}`;
+  if (act.element_type) return `<${act.element_type}>`;
+  if (act.target) {
+    if (typeof act.target === 'string') return act.target;
+    if (act.target.selector) return String(act.target.selector);
+    if (act.target.element_id) return `#${act.target.element_id}`;
+    if (act.target.element_type) return `<${act.target.element_type}>`;
+  }
+  if (act.secret_key || act.secret_alias) return `vault:${act.secret_key || act.secret_alias}`;
+  if (act.url) {
+    try {
+      const u = new URL(act.url);
+      return u.hostname + (u.pathname !== '/' ? u.pathname : '');
+    } catch (_) {
+      return String(act.url);
+    }
+  }
+  if (act.point) return `(${act.point.x}, ${act.point.y})`;
+  if (act.x !== undefined && act.y !== undefined) return `(${act.x}, ${act.y})`;
+  if (act.deltaY !== undefined) return `deltaY: ${act.deltaY}`;
+  if (act.target_bbox || act.bbox) {
+    const b = act.target_bbox || act.bbox;
+    if (Array.isArray(b)) return `[${b.slice(0, 4).join(',')}]`;
+  }
+  return '';
+}
+
+/**
+ * Clears the session status event log.
+ */
+export async function clearStatusLog() {
+  try {
+    const session = getSessionStorage();
+    if (session && typeof session.set === 'function') {
+      await session.set({ agentStatusLog: [] });
+    }
+  } catch (err) {
+    console.warn('[Background] Failed to clear status log:', err);
+  }
+}
+
+/**
+ * Records and broadcasts an AGENT_STATUS event.
+ * Saves recent events to session storage.
+ *
+ * @param {object} eventPayload
+ * @returns {Promise<object>} Recorded payload
+ */
+export async function recordAgentStatus(eventPayload) {
+  const payload = {
+    type: 'AGENT_STATUS',
+    timestamp: Date.now(),
+    ...eventPayload
+  };
+
+  // Broadcast to active popup / listeners
+  broadcastTaskMessage(payload);
+
+  // Store recent N events in session storage
+  try {
+    const session = getSessionStorage();
+    if (session && typeof session.get === 'function') {
+      const data = await session.get(['agentStatusLog']);
+      const current = Array.isArray(data?.agentStatusLog) ? data.agentStatusLog : [];
+      current.push(payload);
+      if (current.length > MAX_STATUS_EVENTS) {
+        current.splice(0, current.length - MAX_STATUS_EVENTS);
+      }
+      if (typeof session.set === 'function') {
+        await session.set({ agentStatusLog: current });
+      }
+    }
+  } catch (err) {
+    console.warn('[Background] Failed to record status in session storage:', err);
+  }
+
+  return payload;
+}
+
+
 /**
  * Autonomous agent loop: captures state, gets plan, executes action(s),
  * waits for DOM to settle, recaptures, and loops until task is complete or max steps reached.
@@ -349,6 +457,7 @@ export async function startLoop(tabId = null, task = '', options = {}) {
 
   await ensureOffscreenDocument();
   await ensureState();
+  await clearStatusLog();
   agentState.isRunning = true;
   agentState.currentTabId = targetTabId;
   agentState.currentTask = targetTask;
@@ -378,6 +487,19 @@ export async function startLoop(tabId = null, task = '', options = {}) {
       await chrome.storage.local.set({ agentState });
 
       console.log(`[Background] Loop step ${step}/${maxSteps} starting...`);
+
+      const stepStartedEvent = {
+        event: 'STEP_STARTED',
+        step,
+        maxSteps,
+        taskId,
+        sessionId,
+        message: `Step ${step}/${maxSteps} started`
+      };
+      await recordAgentStatus(stepStartedEvent);
+      if (typeof opts.onStatus === 'function') {
+        try { opts.onStatus(stepStartedEvent); } catch (_) {}
+      }
 
       // 1. Recapture screen + DOM skeleton and get plan from server
       let currentLlmConfig = null;
@@ -474,6 +596,21 @@ export async function startLoop(tabId = null, task = '', options = {}) {
           break;
         }
 
+        const target = getSanitizedActionTarget(act);
+        const actionDecidedEvent = {
+          event: 'ACTION_DECIDED',
+          step,
+          actionType: actType,
+          target,
+          taskId,
+          sessionId,
+          message: target ? `Action decided: ${actType} on ${target}` : `Action decided: ${actType}`
+        };
+        await recordAgentStatus(actionDecidedEvent);
+        if (typeof opts.onStatus === 'function') {
+          try { opts.onStatus(actionDecidedEvent); } catch (_) {}
+        }
+
         // Ticket 07 / C7: Action-risk policy classification & confirmation gate
         const policyContext = {
           task: targetTask,
@@ -486,6 +623,23 @@ export async function startLoop(tabId = null, task = '', options = {}) {
         console.log(`[Background] Executing action at step ${step}:`, act);
         const actionResult = await executeActionInTab(targetTabId, act);
         stepRecord.actionResults.push(actionResult);
+
+        const actionExecutedEvent = {
+          event: 'ACTION_EXECUTED',
+          step,
+          actionType: actType,
+          target,
+          success: Boolean(actionResult?.success),
+          taskId,
+          sessionId,
+          message: target
+            ? `Action executed: ${actType} on ${target} (${actionResult?.success ? 'success' : 'failed'})`
+            : `Action executed: ${actType} (${actionResult?.success ? 'success' : 'failed'})`
+        };
+        await recordAgentStatus(actionExecutedEvent);
+        if (typeof opts.onStatus === 'function') {
+          try { opts.onStatus(actionExecutedEvent); } catch (_) {}
+        }
       }
 
       history.push(stepRecord);
@@ -499,6 +653,18 @@ export async function startLoop(tabId = null, task = '', options = {}) {
     }
   } catch (err) {
     console.error(`[Background] Error during autonomous loop step ${step}:`, err);
+    const loopErrorEvent = {
+      event: 'LOOP_ERROR',
+      step,
+      error: err?.message || String(err),
+      taskId,
+      sessionId,
+      message: `Error at step ${step}: ${err?.message || String(err)}`
+    };
+    await recordAgentStatus(loopErrorEvent);
+    if (typeof opts.onStatus === 'function') {
+      try { opts.onStatus(loopErrorEvent); } catch (_) {}
+    }
     throw err;
   } finally {
     agentState.isRunning = false;
@@ -511,6 +677,21 @@ export async function startLoop(tabId = null, task = '', options = {}) {
 
   // Notify listeners (popup, etc.) of completion or exhaustion
   if (taskComplete) {
+    const doneStatusEvent = {
+      event: 'TASK_DONE',
+      step,
+      stepCount: step,
+      steps: step,
+      reason: completionReason,
+      taskId,
+      sessionId,
+      message: completionReason ? `✓ Done — ${completionReason}` : '✓ Done'
+    };
+    await recordAgentStatus(doneStatusEvent);
+    if (typeof opts.onStatus === 'function') {
+      try { opts.onStatus(doneStatusEvent); } catch (_) {}
+    }
+
     const donePayload = {
       type: 'TASK_DONE',
       stepCount: step,
@@ -524,6 +705,21 @@ export async function startLoop(tabId = null, task = '', options = {}) {
     }
     broadcastTaskMessage(donePayload);
   } else if (step >= maxSteps) {
+    const exhaustedStatusEvent = {
+      event: 'TASK_EXHAUSTED',
+      step,
+      stepCount: step,
+      steps: step,
+      maxSteps,
+      taskId,
+      sessionId,
+      message: '⚠ Step limit reached'
+    };
+    await recordAgentStatus(exhaustedStatusEvent);
+    if (typeof opts.onStatus === 'function') {
+      try { opts.onStatus(exhaustedStatusEvent); } catch (_) {}
+    }
+
     const exhaustedPayload = {
       type: 'TASK_EXHAUSTED',
       stepCount: step,
@@ -610,6 +806,11 @@ globalThis.enforceConfirmationGate = enforceConfirmationGate;
 globalThis.ConfirmationRequired = ConfirmationRequired;
 globalThis.ConfirmationDeclined = ConfirmationDeclined;
 globalThis.broadcastTaskMessage = broadcastTaskMessage;
+globalThis.recordAgentStatus = recordAgentStatus;
+globalThis.clearStatusLog = clearStatusLog;
+globalThis.getSanitizedActionTarget = getSanitizedActionTarget;
+globalThis.getSessionStorage = getSessionStorage;
+globalThis.MAX_STATUS_EVENTS = MAX_STATUS_EVENTS;
 
 export {
   downscaleImage,
@@ -897,6 +1098,19 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
           const cfg = message.config || {};
           await chrome.storage.local.set({ llmConfig: cfg });
           console.log('[Background] LLM config saved:', cfg.provider, cfg.model);
+          sendResponse({ success: true });
+          break;
+        }
+        case 'GET_STATUS_LOG': {
+          const session = getSessionStorage();
+          const data = session && typeof session.get === 'function'
+            ? await session.get(['agentStatusLog'])
+            : { agentStatusLog: [] };
+          sendResponse({ success: true, log: data?.agentStatusLog || [] });
+          break;
+        }
+        case 'CLEAR_STATUS_LOG': {
+          await clearStatusLog();
           sendResponse({ success: true });
           break;
         }

@@ -32,6 +32,17 @@
       </div>
     </div>
 
+    <!-- Live Status Log Card -->
+    <div class="card" id="statusLogCard">
+      <div class="section-header" style="margin-bottom: 6px;">
+        <span class="label" style="font-weight: 600;">Activity Stream</span>
+        <button id="clearLogBtn" class="icon-btn" type="button" title="Clear log" style="font-size: 11px; padding: 2px 6px;">Clear</button>
+      </div>
+      <div id="statusLogPanel" class="status-log-panel" role="log" aria-live="polite">
+        <div class="log-empty-msg" id="logEmptyMsg">No activity yet</div>
+      </div>
+    </div>
+
     <!-- LLM Mode Card -->
     <div class="card">
       <div class="section-header" id="llmSectionHeader">
