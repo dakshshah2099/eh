@@ -29,7 +29,8 @@ import {
   preprocessImage,
   calculateIoU,
   nonMaxSuppression,
-  runVisionInference
+  runVisionInference,
+  isVisionRuntimeSupported
 } from '../src/vision_inference.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -318,7 +319,22 @@ async function runAllTests() {
   assert.equal(blankDetections.length, 0, `Expected 0 proposals on uniform blank canvas, got: ${blankDetections.length}`);
   console.log('✓ Blank/uniform image produces 0 false-positive UI detections.\n');
 
-  console.log('🎉 All Ticket 09 and Ticket 11 Vision Model tests passed successfully!');
+  // Test 10: Ticket 02 / C2 Runtime support check
+  console.log('Test 10: Verifying isVisionRuntimeSupported capability detection...');
+  const isSupported = isVisionRuntimeSupported();
+  assert.equal(typeof isSupported, 'boolean');
+  assert.equal(isSupported, true, 'Standard node environment with WebAssembly should report runtime supported');
+
+  const origWasm = globalThis.WebAssembly;
+  try {
+    delete globalThis.WebAssembly;
+    assert.equal(isVisionRuntimeSupported(), false, 'Should return false when WebAssembly is unavailable');
+  } finally {
+    globalThis.WebAssembly = origWasm;
+  }
+  console.log('✓ isVisionRuntimeSupported capability detection validated.\n');
+
+  console.log('🎉 All Ticket 02, Ticket 09, and Ticket 11 Vision Model tests passed successfully!');
 }
 
 runAllTests().catch((err) => {

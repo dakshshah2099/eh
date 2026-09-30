@@ -1125,19 +1125,133 @@ async function getLocalSecret(alias) {
   const key = String(alias);
   if (typeof chrome !== 'undefined' && chrome.storage?.session?.get) {
     try {
-      const res = await chrome.storage.session.get([`secret_${key}`]);
+      const res = await chrome.storage.session.get([`secret_${key}`, key]);
       if (res && res[`secret_${key}`]) {
         return res[`secret_${key}`];
+      }
+      if (res && res[key]) {
+        return res[key];
+      }
+    } catch (_) {}
+  }
+  if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+    try {
+      const res = await new Promise((resolve) => {
+        try {
+          chrome.storage.local.get([key, `secret_${key}`, 'secrets'], (data) => {
+            if (chrome.runtime?.lastError) resolve(null);
+            else resolve(data);
+          });
+        } catch (_) {
+          resolve(null);
+        }
+      });
+      if (res) {
+        if (res[key] != null) return String(res[key]);
+        if (res[`secret_${key}`] != null) return String(res[`secret_${key}`]);
+        if (res.secrets && res.secrets[key] != null) return String(res.secrets[key]);
       }
     } catch (_) {}
   }
   return null;
 }
 
+// Centralized Action Schema resolution
+const SCHEMA_SYMBOL = Symbol.for('__PRIVACY_LENS_ACTION_SCHEMA__');
+
+function resolveActionSchema() {
+  if (typeof globalThis !== 'undefined' && globalThis[SCHEMA_SYMBOL]) {
+    return globalThis[SCHEMA_SYMBOL];
+  }
+  if (typeof window !== 'undefined' && window[SCHEMA_SYMBOL]) {
+    return window[SCHEMA_SYMBOL];
+  }
+  if (typeof Set !== 'undefined' && Set[SCHEMA_SYMBOL]) {
+    return Set[SCHEMA_SYMBOL];
+  }
+  return null;
+}
+
+const DEFAULT_ALLOWED_ACTION_TYPES = new Set([
+  'click',
+  'type',
+  'input',
+  'scroll',
+  'wait',
+  'navigate',
+  'fill_secret',
+  'done'
+]);
+
+function getEffectiveAllowedTypes() {
+  const schema = resolveActionSchema();
+  return schema ? schema.ALLOWED_ACTION_TYPES : DEFAULT_ALLOWED_ACTION_TYPES;
+}
+
 /**
- * Validates an action item schema in content script.
+ * Centralized navigation URL validator enforcing strict scheme allowlist in content script.
+ * Delegates to centralized action schema if present, with standalone fallback.
+ * Permitted schemes: 'http:', 'https:' only.
+ * Explicitly rejected dangerous schemes: 'javascript:', 'data:', 'file:', 'chrome:', 'chrome-extension:'.
+ *
+ * @param {string} url - Destination URL string
+ * @returns {{ valid: boolean, error?: string, url?: string }}
+ */
+function validateNavigationUrl(url) {
+  const schema = resolveActionSchema();
+  if (schema && typeof schema.validateNavigationUrl === 'function') {
+    return schema.validateNavigationUrl(url);
+  }
+
+  if (!url || typeof url !== 'string') {
+    return { valid: false, error: 'navigate action requires a url string' };
+  }
+
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return { valid: false, error: 'navigate action requires a non-empty url string' };
+  }
+
+  const FORBIDDEN_SCHEMES = new Set(['javascript:', 'data:', 'file:', 'chrome:', 'chrome-extension:']);
+  const ALLOWED_SCHEMES = new Set(['http:', 'https:']);
+
+  const schemeMatch = trimmed.match(/^([a-zA-Z0-9+.-]+):/);
+  if (schemeMatch && FORBIDDEN_SCHEMES.has(schemeMatch[1].toLowerCase() + ':')) {
+    return { valid: false, error: `Forbidden URL scheme "${schemeMatch[1].toLowerCase()}:": navigation blocked for security` };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch (err) {
+    return { valid: false, error: `Invalid URL format: "${trimmed}"` };
+  }
+
+  const protocol = parsed.protocol.toLowerCase();
+  if (FORBIDDEN_SCHEMES.has(protocol)) {
+    return { valid: false, error: `Forbidden URL scheme "${protocol}": navigation blocked for security` };
+  }
+
+  if (!ALLOWED_SCHEMES.has(protocol)) {
+    return { valid: false, error: `Unsupported URL scheme "${protocol}": only http: and https: are allowed` };
+  }
+
+  return { valid: true, url: parsed.href };
+}
+
+/**
+ * Validates an action item schema in content script using centralized action schema.
+ * Prevents validation drift between action executor and content script.
+ *
+ * @param {object} action - Action item to validate
+ * @returns {{ valid: boolean, error?: string }}
  */
 function validateAction(action) {
+  const schema = resolveActionSchema();
+  if (schema && typeof schema.validateAction === 'function') {
+    return schema.validateAction(action);
+  }
+
   if (!action || typeof action !== 'object') {
     return { valid: false, error: 'Action must be an object' };
   }
@@ -1146,7 +1260,7 @@ function validateAction(action) {
     return { valid: false, error: 'Missing or invalid action type' };
   }
   const type = rawType.toLowerCase();
-  const allowed = new Set(['click', 'type', 'input', 'scroll', 'wait', 'navigate', 'fill_secret']);
+  const allowed = getEffectiveAllowedTypes();
   if (!allowed.has(type)) {
     return { valid: false, error: `Unsupported action type: "${type}"` };
   }
@@ -1168,6 +1282,13 @@ function validateAction(action) {
     const key = action.secret_key || action.secret_alias || action.secretKey;
     if (!key || typeof key !== 'string') {
       return { valid: false, error: 'fill_secret requires a valid secret_key alias' };
+    }
+  }
+  if (type === 'navigate') {
+    const url = action.url || action.target_url;
+    const urlValidation = validateNavigationUrl(url);
+    if (!urlValidation.valid) {
+      return urlValidation;
     }
   }
   return { valid: true };
@@ -1209,9 +1330,54 @@ async function executeFillSecret(params = {}) {
 }
 
 /**
+ * Executes browser navigation to a validated destination URL in content script.
+ */
+async function executeNavigate(params = {}) {
+  const rawUrl = params.url || params.target_url;
+  const urlValidation = validateNavigationUrl(rawUrl);
+  if (!urlValidation.valid) {
+    throw new Error(`Navigation rejected: ${urlValidation.error}`);
+  }
+
+  const validUrl = urlValidation.url;
+  let navigated = false;
+
+  if (typeof chrome !== 'undefined' && chrome.tabs && typeof chrome.tabs.update === 'function') {
+    const tabId = params.tabId ?? params.tab_id;
+    if (tabId != null) {
+      await chrome.tabs.update(tabId, { url: validUrl });
+    } else {
+      await chrome.tabs.update({ url: validUrl });
+    }
+    navigated = true;
+  } else if (typeof window !== 'undefined' && window.location) {
+    if (typeof window.location.assign === 'function') {
+      window.location.assign(validUrl);
+    } else {
+      window.location.href = validUrl;
+    }
+    navigated = true;
+  } else if (typeof globalThis !== 'undefined' && globalThis.location) {
+    if (typeof globalThis.location.assign === 'function') {
+      globalThis.location.assign(validUrl);
+    } else {
+      globalThis.location.href = validUrl;
+    }
+    navigated = true;
+  }
+
+  return {
+    success: true,
+    action: 'navigate',
+    url: validUrl,
+    navigated
+  };
+}
+
+/**
  * Dispatches an action object to the appropriate executor.
  *
- * @param {Object} action - Action definition (type: 'click'|'scroll'|'type'|'fill_secret'|'wait', params...)
+ * @param {Object} action - Action definition (type: 'click'|'scroll'|'type'|'fill_secret'|'navigate'|'wait', params...)
  * @returns {Promise<Object>} Execution result
  */
 async function executeAction(action) {
@@ -1241,10 +1407,14 @@ async function executeAction(action) {
       return await executeType(actionData);
     case 'fill_secret':
       return await executeFillSecret(actionData);
+    case 'navigate':
+      return await executeNavigate(actionData);
     case 'wait':
       const ms = Number(actionData.delay_ms || actionData.ms || 500);
       await new Promise(r => setTimeout(r, ms));
       return { success: true, action: 'wait', duration: ms };
+    case 'done':
+      return { success: true, action: 'done', reason: actionData.reason || '' };
     default:
       throw new Error(`Unsupported action type: "${type}"`);
   }
@@ -1587,6 +1757,9 @@ if (typeof window !== 'undefined') {
   window.executeAction = executeAction;
   window.executeActions = executeActions;
   window.validateAction = validateAction;
+  window.validateNavigationUrl = validateNavigationUrl;
+  window.ALLOWED_ACTION_TYPES = getEffectiveAllowedTypes();
+  window.executeNavigate = executeNavigate;
   window.executeFillSecret = executeFillSecret;
   window.getLocalSecret = getLocalSecret;
   window.applyPiiHighlights = applyPiiHighlights;
@@ -1617,6 +1790,9 @@ if (typeof module !== 'undefined' && module.exports) {
     executeAction,
     executeActions,
     validateAction,
+    validateNavigationUrl,
+    ALLOWED_ACTION_TYPES: getEffectiveAllowedTypes(),
+    executeNavigate,
     executeFillSecret,
     getLocalSecret,
     applyPiiHighlights,

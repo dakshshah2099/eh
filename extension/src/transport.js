@@ -8,6 +8,28 @@ export const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000/api/plan';
 export const DEFAULT_HEALTH_URL = 'http://127.0.0.1:8000/health';
 
 /**
+ * Generates a cryptographically random 16-byte hex nonce string.
+ * @returns {string} 32-character hexadecimal string
+ */
+export function generateNonce() {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto) {
+    if (typeof globalThis.crypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16);
+      globalThis.crypto.getRandomValues(bytes);
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    }
+    if (typeof globalThis.crypto.randomUUID === 'function') {
+      return globalThis.crypto.randomUUID().replace(/-/g, '');
+    }
+  }
+  let result = '';
+  for (let i = 0; i < 32; i++) {
+    result += Math.floor(Math.random() * 16).toString(16);
+  }
+  return result;
+}
+
+/**
  * Validates and normalizes payload for the /api/plan endpoint.
  * Schema conforms to FastAPI PlanRequest:
  * {
@@ -74,13 +96,25 @@ export function buildPayload(options = {}) {
     scale: typeof imgOpts.scale === 'number' ? imgOpts.scale : (typeof options.imageScale === 'number' ? options.imageScale : (typeof options.scale === 'number' ? options.scale : 1.0))
   };
 
-  // Ticket 12 / B12: Wire popup LLM config directly into planning payload
   const llm = options.llmConfig || options.llm || {};
   const provider = options.provider ?? llm.provider;
   const model = options.model ?? llm.model;
   const baseUrl = options.base_url ?? options.baseUrl ?? llm.baseUrl;
-  const apiKey = options.api_key ?? options.apiKey ?? llm.apiKey;
+
+  // Ticket 12 / B12 & Ticket 16 / C16: Server-side-only provider API key
+  // Outbound payload omits provider api_key when serverKeyMode is active (default is true).
+  // When user provides an API key via extension frontend, serverKeyMode can be set to false.
+  const serverKeyMode = options.serverKeyMode ?? options.server_key_mode ?? true;
+  const apiKey = serverKeyMode ? undefined : (options.api_key ?? options.apiKey ?? llm.apiKey);
+  if (serverKeyMode && (options.api_key || options.apiKey || llm.apiKey)) {
+    console.warn('[Transport] Provider api_key omitted from outbound payload (server-key mode active)');
+  }
   const timestamp = typeof options.timestamp === 'number' ? options.timestamp : Date.now() / 1000.0;
+  const sessionId = options.session_id ?? options.sessionId;
+  const taskId = options.task_id ?? options.taskId;
+  const nonce = typeof options.nonce === 'string' && options.nonce.trim()
+    ? options.nonce.trim()
+    : generateNonce();
 
   return {
     task,
@@ -91,11 +125,14 @@ export function buildPayload(options = {}) {
     image: imageMeta,
     redaction_map: redactionMap,
     timestamp,
+    nonce,
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
     ...(baseUrl ? { base_url: baseUrl } : {}),
     ...(apiKey ? { api_key: apiKey } : {}),
-    ...(uiElements && uiElements.length > 0 ? { ui_elements: uiElements } : {})
+    ...(uiElements && uiElements.length > 0 ? { ui_elements: uiElements } : {}),
+    ...(sessionId ? { session_id: sessionId } : {}),
+    ...(taskId ? { task_id: taskId } : {})
   };
 }
 
@@ -105,7 +142,7 @@ export function buildPayload(options = {}) {
  * Dispatches the plan payload to the backend server.
  * @param {object} payload - Normalized plan payload
  * @param {string} [serverUrl=DEFAULT_SERVER_URL] - Target server plan endpoint
- * @param {object} [fetchOptions={}] - Additional fetch options (signal, custom headers)
+ * @param {object} [fetchOptions={}] - Additional fetch options (signal, custom headers, serverApiKey/serverToken)
  * @returns {Promise<{ actions: Array<object>, task_complete: boolean, confidence: number }>}
  */
 export async function sendPayloadToServer(payload, serverUrl = DEFAULT_SERVER_URL, fetchOptions = {}) {
@@ -116,9 +153,12 @@ export async function sendPayloadToServer(payload, serverUrl = DEFAULT_SERVER_UR
   const endpoint = serverUrl || DEFAULT_SERVER_URL;
   console.log(`[Transport] Posting payload to ${endpoint}...`);
 
+  const serverToken = fetchOptions.serverApiKey || fetchOptions.serverToken || fetchOptions.apiKey || (payload && (payload.server_api_key || payload.serverApiKey));
   const headers = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
+    ...(payload && payload.nonce ? { 'X-Nonce': payload.nonce } : {}),
+    ...(serverToken ? { 'Authorization': `Bearer ${serverToken}` } : {}),
     ...(fetchOptions.headers || {})
   };
 

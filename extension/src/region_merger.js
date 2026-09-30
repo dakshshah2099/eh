@@ -427,64 +427,59 @@ function clusterOverlappingRegions(items, options) {
  *   - preserveExtraFields {boolean} [false]: Whether to retain extra properties like selector.
  * @returns {Array<{ bbox: [number, number, number, number], category: string, source: string, confidence: number }>} Clean sorted regions.
  */
-export function mergeSensitiveRegions(domRegions = [], faceRegions = [], ocrRegions = [], uiRegionsOrOptions = [], options = {}) {
+export function mergeSensitiveRegions(domRegions = [], faceRegions = [], ocrRegions = [], options = {}) {
   // Support flexible call signatures:
   // 1) mergeSensitiveRegions(allRegions, options)
   // 2) mergeSensitiveRegions(domRegions, faceRegions, ocrRegions, options)
-  // 3) mergeSensitiveRegions(domRegions, faceRegions, ocrRegions, uiRegions, options)
+  // Ticket 01 / C1: uiRegions is NEVER ingested into sensitive/privacy regions.
   let domList = domRegions;
   let faceList = faceRegions;
   let ocrList = ocrRegions;
-  let uiList = [];
   let opts = options;
 
   if (faceRegions && !Array.isArray(faceRegions) && typeof faceRegions === 'object' && ocrRegions === undefined) {
     opts = faceRegions;
     faceList = [];
     ocrList = [];
-    uiList = [];
   } else if (!Array.isArray(domList) && typeof domList === 'object' && domList !== null) {
-    // If wrapped in an object like { domRegions, faceRegions, ocrRegions, uiRegions, options }
+    // If wrapped in an object like { domRegions, faceRegions, ocrRegions, options }
     const wrapper = domList;
     domList = wrapper.domRegions || wrapper.dom || [];
     faceList = wrapper.faceRegions || wrapper.face || wrapper.cv || [];
     ocrList = wrapper.ocrRegions || wrapper.ocr || [];
-    uiList = wrapper.uiRegions || wrapper.visionRegions || wrapper.vision || [];
     opts = wrapper.options || {};
-  } else if (!Array.isArray(uiRegionsOrOptions) && typeof uiRegionsOrOptions === 'object' && uiRegionsOrOptions !== null) {
-    // Called as mergeSensitiveRegions(domRegions, faceRegions, ocrRegions, options)
-    opts = uiRegionsOrOptions;
-    uiList = opts.uiRegions || opts.visionRegions || opts.vision || [];
-  } else {
-    // Called as mergeSensitiveRegions(domRegions, faceRegions, ocrRegions, uiRegions, options)
-    uiList = uiRegionsOrOptions;
-    opts = options;
+  } else if (Array.isArray(options)) {
+    // Legacy caller passed (dom, face, ocr, uiRegions, options) -> ignore uiRegions
+    const legacyFifth = arguments.length > 4 ? arguments[4] : {};
+    opts = (legacyFifth && typeof legacyFifth === 'object' && !Array.isArray(legacyFifth)) ? legacyFifth : {};
   }
 
   opts = opts || {};
   domList = Array.isArray(domList) ? domList : [];
   faceList = Array.isArray(faceList) ? faceList : [];
   ocrList = Array.isArray(ocrList) ? ocrList : [];
-  uiList = Array.isArray(uiList) ? uiList : [];
 
-  // Normalize all regions and record default source
+  // Normalize all regions and record default source.
+  // Ticket 01: Only privacy/sensitive regions (DOM, Face, OCR) are ingested. Never UI vision detections.
   const candidates = [];
 
   for (const item of domList) {
     const norm = normalizeRegionItem(item, 'dom');
-    if (norm) candidates.push(norm);
+    if (norm && norm.source !== 'vision' && !norm.source.split('+').includes('vision') && norm.category !== 'ui_element') {
+      candidates.push(norm);
+    }
   }
   for (const item of faceList) {
     const norm = normalizeRegionItem(item, 'face');
-    if (norm) candidates.push(norm);
+    if (norm && norm.source !== 'vision' && !norm.source.split('+').includes('vision') && norm.category !== 'ui_element') {
+      candidates.push(norm);
+    }
   }
   for (const item of ocrList) {
     const norm = normalizeRegionItem(item, 'ocr');
-    if (norm) candidates.push(norm);
-  }
-  for (const item of uiList) {
-    const norm = normalizeRegionItem(item, 'vision');
-    if (norm) candidates.push(norm);
+    if (norm && norm.source !== 'vision' && !norm.source.split('+').includes('vision') && norm.category !== 'ui_element') {
+      candidates.push(norm);
+    }
   }
 
   if (candidates.length === 0) {
@@ -549,4 +544,45 @@ export function mergeSensitiveRegions(domRegions = [], faceRegions = [], ocrRegi
   }
 
   return result;
+}
+
+/**
+ * Normalizes UI element detections from vision models into the standardized
+ * planner payload structure (ui_elements).
+ *
+ * These elements are strictly UI grounding targets for the planner, NOT privacy
+ * targets, and must never be passed to redaction.
+ *
+ * @param {Array<Object>} [uiRegions=[]] UI elements detected by vision model.
+ * @returns {Array<{ bbox: [number, number, number, number], category: string, label: string, source: string, confidence: number }>}
+ */
+export function normalizeUIElements(uiRegions = []) {
+  if (!Array.isArray(uiRegions)) return [];
+
+  const results = [];
+  for (const item of uiRegions) {
+    if (!item || typeof item !== 'object') continue;
+
+    const bbox = normalizeBBox(item.bbox);
+    if (!bbox || bbox[2] <= 0 || bbox[3] <= 0) continue;
+
+    const rawLabel = item.label || item.category || 'ui_element';
+    const category = String(item.category || rawLabel).toLowerCase().trim();
+    const label = item.label !== undefined ? String(item.label).trim() : category;
+    const source = String(item.source || 'vision').toLowerCase().trim();
+    const confidence = typeof item.confidence === 'number' && !isNaN(item.confidence)
+      ? Math.max(0, Math.min(1, item.confidence))
+      : 1.0;
+
+    results.push({
+      ...item,
+      bbox,
+      category,
+      label,
+      source,
+      confidence
+    });
+  }
+
+  return results;
 }

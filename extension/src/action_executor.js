@@ -5,6 +5,24 @@
  * based on target bounding box, CSS selector, or XPath.
  */
 
+import {
+  saveSecretToVault,
+  deleteSecretFromVault,
+  getSecretValue,
+  clearSecretVault
+} from './secret_vault.js';
+import {
+  classifyActionRisk,
+  enforceConfirmationGate,
+  ConfirmationRequired,
+  ConfirmationDeclined,
+  ConfirmationRequiredError,
+  ConfirmationDeclinedError,
+  RISK_TIERS,
+  HIGH_RISK_PATTERNS,
+  executeWithRiskGate
+} from './action_policy.js';
+
 /**
  * Translates coordinates between canvas scaled space and browser viewport space.
  * @param {{x: number, y: number}|number[]} coords - Coordinate point [x, y] or {x, y}
@@ -44,99 +62,14 @@ export function convertCoordinates(coords, options = {}, fromSpace = 'canvas_sca
   return { x: Math.round(x), y: Math.round(y) };
 }
 
-/**
- * Validates an action object against schema rules:
- * - valid action type (click, type, scroll, wait, navigate, fill_secret)
- * - target presence where required
- * - target_bbox bounds and ranges (non-negative, length 4)
- * - confidence range (0.0 to 1.0)
- * - selector safety (no script/event handler injection)
- *
- * @param {object} action - Action item to validate
- * @returns {{ valid: boolean, error?: string }} Validation outcome
- */
-export function validateAction(action) {
-  if (!action || typeof action !== 'object') {
-    return { valid: false, error: 'Action must be an object' };
-  }
+import {
+  ALLOWED_ACTION_TYPES,
+  validateNavigationUrl,
+  validateAction
+} from './action_schema.js';
 
-  const rawType = action.type || action.action;
-  if (!rawType || typeof rawType !== 'string') {
-    return { valid: false, error: 'Missing or invalid action type' };
-  }
+export { ALLOWED_ACTION_TYPES, validateNavigationUrl, validateAction };
 
-  const type = rawType.toLowerCase();
-  const allowedTypes = new Set(['click', 'type', 'input', 'scroll', 'wait', 'navigate', 'fill_secret']);
-  if (!allowedTypes.has(type)) {
-    return { valid: false, error: `Unsupported action type: "${type}"` };
-  }
-
-  // Confidence check if present
-  if (action.confidence !== undefined && action.confidence !== null) {
-    const conf = Number(action.confidence);
-    if (isNaN(conf) || conf < 0.0 || conf > 1.0) {
-      return { valid: false, error: `Action confidence must be between 0.0 and 1.0, got: ${action.confidence}` };
-    }
-  }
-
-  // Selector safety check
-  const selector = action.target_selector || action.selector || action.target?.selector;
-  if (selector && typeof selector === 'string') {
-    if (/<script|javascript:|on\w+=/i.test(selector)) {
-      return { valid: false, error: `Potentially unsafe script injection in selector: "${selector}"` };
-    }
-  }
-
-  // BBox validity check
-  const bbox = action.target_bbox || action.bbox || action.target?.bbox || action.target?.target_bbox;
-  if (bbox !== undefined && bbox !== null) {
-    if (!Array.isArray(bbox) || bbox.length < 4) {
-      return { valid: false, error: 'target_bbox must be an array of at least 4 numbers [x, y, w, h]' };
-    }
-    const [x, y, w, h] = bbox.map(Number);
-    if (isNaN(x) || isNaN(y) || isNaN(w) || isNaN(h)) {
-      return { valid: false, error: 'target_bbox coordinates must be valid numbers' };
-    }
-    if (x < 0 || y < 0 || w < 0 || h < 0) {
-      return { valid: false, error: 'target_bbox values cannot be negative' };
-    }
-  }
-
-  // Target requirement check for target-dependent actions
-  if (type === 'click' || type === 'fill_secret') {
-    const hasTarget = Boolean(
-      action.target_element_id ||
-      action.element_id ||
-      action.target_selector ||
-      action.selector ||
-      action.target_xpath ||
-      action.xpath ||
-      action.target_bbox ||
-      action.bbox ||
-      action.point ||
-      action.target
-    );
-    if (!hasTarget) {
-      return { valid: false, error: `Action "${type}" requires a target locator (element_id, selector, or bbox)` };
-    }
-  }
-
-  if (type === 'fill_secret') {
-    const key = action.secret_key || action.secret_alias || action.secretKey;
-    if (!key || typeof key !== 'string') {
-      return { valid: false, error: 'fill_secret requires a valid secret_key alias' };
-    }
-  }
-
-  if (type === 'navigate') {
-    const url = action.url || action.target_url;
-    if (!url || typeof url !== 'string') {
-      return { valid: false, error: 'navigate action requires a url string' };
-    }
-  }
-
-  return { valid: true };
-}
 
 // Local in-memory / session vault for secret credentials
 const _secretVault = new Map();
@@ -149,11 +82,16 @@ const _secretVault = new Map();
  */
 export function setLocalSecret(alias, value) {
   if (!alias) throw new Error('Secret alias must be provided');
-  _secretVault.set(String(alias), String(value || ''));
+  const key = String(alias);
+  const val = String(value || '');
+  _secretVault.set(key, val);
   if (typeof chrome !== 'undefined' && chrome.storage?.session?.set) {
     try {
-      chrome.storage.session.set({ [`secret_${alias}`]: String(value || '') });
+      chrome.storage.session.set({ [`secret_${key}`]: val, [key]: val });
     } catch (_) {}
+  }
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    saveSecretToVault(key, val).catch(() => {});
   }
 }
 
@@ -170,9 +108,20 @@ export async function getLocalSecret(alias) {
   }
   if (typeof chrome !== 'undefined' && chrome.storage?.session?.get) {
     try {
-      const res = await chrome.storage.session.get([`secret_${key}`]);
+      const res = await chrome.storage.session.get([`secret_${key}`, key]);
       if (res && res[`secret_${key}`]) {
         return res[`secret_${key}`];
+      }
+      if (res && res[key]) {
+        return res[key];
+      }
+    } catch (_) {}
+  }
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    try {
+      const val = await getSecretValue(key);
+      if (val != null) {
+        return val;
       }
     } catch (_) {}
   }
@@ -180,10 +129,34 @@ export async function getLocalSecret(alias) {
 }
 
 /**
+ * Deletes a credential secret from local vault.
+ * @param {string} alias
+ */
+export function deleteLocalSecret(alias) {
+  if (!alias) return;
+  const key = String(alias);
+  _secretVault.delete(key);
+  if (typeof chrome !== 'undefined' && chrome.storage?.session?.remove) {
+    try {
+      chrome.storage.session.remove([`secret_${key}`, key]);
+    } catch (_) {}
+  }
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    deleteSecretFromVault(key).catch(() => {});
+  }
+}
+
+/**
  * Clears stored secrets from local vault.
  */
 export function clearLocalSecrets() {
   _secretVault.clear();
+  if (typeof chrome !== 'undefined' && chrome.storage?.session?.clear) {
+    try { chrome.storage.session.clear(); } catch (_) {}
+  }
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    clearSecretVault().catch(() => {});
+  }
 }
 
 /**
@@ -877,13 +850,67 @@ export async function executeFillSecret(params = {}) {
 }
 
 /**
- * Dispatches an action object to the appropriate executor.
- * Validates action before execution.
+ * Executes browser navigation to a validated destination URL.
+ * Strictly verifies the URL using the centralized validator.
+ * Invokes chrome.tabs.update if extension API is available,
+ * or window.location / globalThis.location in browser DOM contexts.
  *
- * @param {Object} action - Action definition (type: 'click'|'scroll'|'type'|'fill_secret'|'wait', params...)
+ * @param {Object} params - Navigation parameters ({ url, target_url, tabId, ... })
  * @returns {Promise<Object>} Execution result
  */
-export async function executeAction(action) {
+export async function executeNavigate(params = {}) {
+  const rawUrl = params.url || params.target_url;
+  const urlValidation = validateNavigationUrl(rawUrl);
+  if (!urlValidation.valid) {
+    throw new Error(`Navigation rejected: ${urlValidation.error}`);
+  }
+
+  const validUrl = urlValidation.url;
+  let navigated = false;
+
+  // 1. Chrome extension tabs API
+  if (typeof chrome !== 'undefined' && chrome.tabs && typeof chrome.tabs.update === 'function') {
+    const tabId = params.tabId ?? params.tab_id;
+    if (tabId != null) {
+      await chrome.tabs.update(tabId, { url: validUrl });
+    } else {
+      await chrome.tabs.update({ url: validUrl });
+    }
+    navigated = true;
+  } else if (typeof window !== 'undefined' && window.location) {
+    // 2. DOM / Window location
+    if (typeof window.location.assign === 'function') {
+      window.location.assign(validUrl);
+    } else {
+      window.location.href = validUrl;
+    }
+    navigated = true;
+  } else if (typeof globalThis !== 'undefined' && globalThis.location) {
+    if (typeof globalThis.location.assign === 'function') {
+      globalThis.location.assign(validUrl);
+    } else {
+      globalThis.location.href = validUrl;
+    }
+    navigated = true;
+  }
+
+  return {
+    success: true,
+    action: 'navigate',
+    url: validUrl,
+    navigated
+  };
+}
+
+/**
+ * Dispatches an action object to the appropriate executor.
+ * Validates action before execution, classifies risk, and enforces confirmation gate.
+ *
+ * @param {Object} action - Action definition (type: 'click'|'scroll'|'type'|'fill_secret'|'navigate'|'wait', params...)
+ * @param {Object} [options={}] - Options including onConfirmAction callback, context, etc.
+ * @returns {Promise<Object>} Execution result
+ */
+export async function executeAction(action, options = {}) {
   if (!action) {
     throw new Error('No action provided');
   }
@@ -896,6 +923,19 @@ export async function executeAction(action) {
   const valResult = validateAction(actionData);
   if (!valResult.valid) {
     throw new Error(`Action schema validation failed: ${valResult.error}`);
+  }
+
+  // Ticket 07 / C7: Action-risk policy classification & confirmation gate
+  const policyContext = options.context || { task: options.task || actionData.task, ui_elements: options.ui_elements || options.uiElements };
+  classifyActionRisk(actionData, policyContext);
+  await enforceConfirmationGate(actionData, options);
+
+  if (action !== actionData && typeof action === 'object') {
+    try {
+      action.risk = actionData.risk;
+      action.requires_confirmation = actionData.requires_confirmation;
+      if (actionData.confirmed) action.confirmed = true;
+    } catch (_) {}
   }
 
   const rawType = actionData.type || actionData.action || action.type;
@@ -911,10 +951,14 @@ export async function executeAction(action) {
       return await executeType(actionData);
     case 'fill_secret':
       return await executeFillSecret(actionData);
+    case 'navigate':
+      return await executeNavigate(actionData);
     case 'wait':
       const ms = Number(actionData.delay_ms || actionData.ms || 500);
       await new Promise(r => setTimeout(r, ms));
       return { success: true, action: 'wait', duration: ms };
+    case 'done':
+      return { success: true, action: 'done', reason: actionData.reason || '' };
     default:
       throw new Error(`Unsupported action type: "${type}"`);
   }
@@ -923,9 +967,10 @@ export async function executeAction(action) {
 /**
  * Executes a single action or a list of actions sequentially.
  * Enforces max actions per response cap (default: 10).
+ * Passes options (including onConfirmAction) to executeAction.
  *
  * @param {Object|Array<Object>} actions - Action or array of actions
- * @param {object} [options={}] - Options { maxActions: 10 }
+ * @param {object} [options={}] - Options { maxActions: 10, onConfirmAction, ... }
  * @returns {Promise<Object>} Execution result(s)
  */
 export async function executeActions(actions, options = {}) {
@@ -945,10 +990,22 @@ export async function executeActions(actions, options = {}) {
 
   const results = [];
   for (const act of list) {
-    const res = await executeAction(act);
+    const res = await executeAction(act, options);
     results.push(res);
   }
 
   return results.length === 1 ? results[0] : { success: true, results };
 }
+
+export {
+  classifyActionRisk,
+  enforceConfirmationGate,
+  ConfirmationRequired,
+  ConfirmationDeclined,
+  ConfirmationRequiredError,
+  ConfirmationDeclinedError,
+  RISK_TIERS,
+  HIGH_RISK_PATTERNS,
+  executeWithRiskGate
+};
 

@@ -1,29 +1,29 @@
 // Popup script for Privacy Lens Agent
 
-// LiteLLM provider → { hint, needsKey, needsBaseUrl }
+// LiteLLM provider → { hint, needsBaseUrl }
 const PROVIDER_META = {
-  openai:           { hint: 'gpt-4o, gpt-4o-mini, o1-mini', needsKey: true,  needsBaseUrl: false },
-  anthropic:        { hint: 'claude-3-5-sonnet-20241022, claude-3-haiku-20240307', needsKey: true,  needsBaseUrl: false },
-  gemini:           { hint: 'gemini/gemini-2.0-flash, gemini/gemini-1.5-pro', needsKey: true,  needsBaseUrl: false },
-  vertex_ai:        { hint: 'vertex_ai/gemini-2.0-flash', needsKey: false, needsBaseUrl: false },
-  azure:            { hint: 'azure/<deployment-name>', needsKey: true,  needsBaseUrl: true  },
-  bedrock:          { hint: 'bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0', needsKey: false, needsBaseUrl: false },
-  groq:             { hint: 'groq/llama-3.3-70b-versatile, groq/gemma2-9b-it', needsKey: true,  needsBaseUrl: false },
-  cerebras:         { hint: 'cerebras/llama3.1-8b', needsKey: true,  needsBaseUrl: false },
-  fireworks_ai:     { hint: 'fireworks_ai/accounts/fireworks/models/llama-v3p1-8b-instruct', needsKey: true,  needsBaseUrl: false },
-  together_ai:      { hint: 'together_ai/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo', needsKey: true,  needsBaseUrl: false },
-  deepinfra:        { hint: 'deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo', needsKey: true,  needsBaseUrl: false },
-  sambanova:        { hint: 'sambanova/Meta-Llama-3.1-8B-Instruct', needsKey: true,  needsBaseUrl: false },
-  deepseek:         { hint: 'deepseek/deepseek-chat, deepseek/deepseek-reasoner', needsKey: true,  needsBaseUrl: false },
-  mistral:          { hint: 'mistral/mistral-large-latest, mistral/codestral-latest', needsKey: true,  needsBaseUrl: false },
-  cohere:           { hint: 'command-r-plus, command-r', needsKey: true,  needsBaseUrl: false },
-  xai:              { hint: 'xai/grok-2-latest, xai/grok-3-mini', needsKey: true,  needsBaseUrl: false },
-  perplexity:       { hint: 'perplexity/sonar-pro, perplexity/sonar', needsKey: true,  needsBaseUrl: false },
-  openrouter:       { hint: 'openrouter/meta-llama/llama-3.3-70b-instruct', needsKey: true,  needsBaseUrl: false },
-  ollama:           { hint: 'ollama/llama3.2, ollama/qwen2.5-coder', needsKey: false, needsBaseUrl: true  },
-  vllm:             { hint: 'hosted_vllm/meta-llama/Llama-3.1-8B-Instruct', needsKey: false, needsBaseUrl: true  },
-  lm_studio:        { hint: 'lm_studio/qwen2.5-14b-instruct', needsKey: false, needsBaseUrl: true  },
-  openai_compatible:{ hint: 'openai/<model-name>', needsKey: true,  needsBaseUrl: true  },
+  openai:           { hint: 'gpt-4o, gpt-4o-mini, o1-mini', needsBaseUrl: false },
+  anthropic:        { hint: 'claude-3-5-sonnet-20241022, claude-3-haiku-20240307', needsBaseUrl: false },
+  gemini:           { hint: 'gemini/gemini-2.0-flash, gemini/gemini-1.5-pro', needsBaseUrl: false },
+  vertex_ai:        { hint: 'vertex_ai/gemini-2.0-flash', needsBaseUrl: false },
+  azure:            { hint: 'azure/<deployment-name>', needsBaseUrl: true  },
+  bedrock:          { hint: 'bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0', needsBaseUrl: false },
+  groq:             { hint: 'groq/llama-3.3-70b-versatile, groq/gemma2-9b-it', needsBaseUrl: false },
+  cerebras:         { hint: 'cerebras/llama3.1-8b', needsBaseUrl: false },
+  fireworks_ai:     { hint: 'fireworks_ai/accounts/fireworks/models/llama-v3p1-8b-instruct', needsBaseUrl: false },
+  together_ai:      { hint: 'together_ai/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo', needsBaseUrl: false },
+  deepinfra:        { hint: 'deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo', needsBaseUrl: false },
+  sambanova:        { hint: 'sambanova/Meta-Llama-3.1-8B-Instruct', needsBaseUrl: false },
+  deepseek:         { hint: 'deepseek/deepseek-chat, deepseek/deepseek-reasoner', needsBaseUrl: false },
+  mistral:          { hint: 'mistral/mistral-large-latest, mistral/codestral-latest', needsBaseUrl: false },
+  cohere:           { hint: 'command-r-plus, command-r', needsBaseUrl: false },
+  xai:              { hint: 'xai/grok-2-latest, xai/grok-3-mini', needsBaseUrl: false },
+  perplexity:       { hint: 'perplexity/sonar-pro, perplexity/sonar', needsBaseUrl: false },
+  openrouter:       { hint: 'openrouter/meta-llama/llama-3.3-70b-instruct', needsBaseUrl: false },
+  ollama:           { hint: 'ollama/llama3.2, ollama/qwen2.5-coder', needsBaseUrl: true  },
+  vllm:             { hint: 'hosted_vllm/meta-llama/Llama-3.1-8B-Instruct', needsBaseUrl: true  },
+  lm_studio:        { hint: 'lm_studio/qwen2.5-14b-instruct', needsBaseUrl: true  },
+  openai_compatible:{ hint: 'openai/<model-name>', needsBaseUrl: true  },
 };
 
 const DEFAULT_BASE_URLS = {
@@ -131,17 +131,43 @@ document.addEventListener('DOMContentLoaded', () => {
   // Reactive state sync whenever background writes agentState to storage
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.agentState) {
-        const state = changes.agentState.newValue;
-        if (state) {
-          updateUI(state.isRunning, state.lastStartedAt, state.lastStoppedAt);
-          if (state.lastError) {
-            statusInfo.textContent = 'Error: ' + state.lastError;
-          } else if (state.isRunning) {
-            const stepText = state.stepCount > 0 ? ' (step ' + state.stepCount + ')' : '';
-            statusInfo.textContent = 'Loop active' + stepText;
+      if (area === 'local') {
+        if (changes.agentState) {
+          const state = changes.agentState.newValue;
+          if (state) {
+            updateUI(state.isRunning, state.lastStartedAt, state.lastStoppedAt);
+            if (state.lastError) {
+              statusInfo.textContent = 'Error: ' + state.lastError;
+            } else if (state.isRunning) {
+              const stepText = state.stepCount > 0 ? ' (step ' + state.stepCount + ')' : '';
+              statusInfo.textContent = 'Loop active' + stepText;
+            } else if (state.lastCompletionStatus === 'done') {
+              const reasonText = state.lastCompletionReason ? ': ' + state.lastCompletionReason : '';
+              statusInfo.textContent = 'Task done in ' + (state.stepCount || 1) + ' step(s)' + reasonText;
+            } else if (state.lastCompletionStatus === 'exhausted') {
+              statusInfo.textContent = 'Task stopped: reached maximum steps (' + (state.stepCount || 10) + ') without completion';
+            }
           }
         }
+        if (changes.secrets || changes.secret_aliases) {
+          refreshSecrets();
+        }
+      }
+    });
+  }
+
+  // Listen for task completion or exhaustion runtime messages
+  if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (!message || typeof message !== 'object') return;
+      if (message.type === 'TASK_DONE') {
+        updateUI(false, null, Date.now());
+        const reasonText = message.reason ? `: ${message.reason}` : '';
+        statusInfo.textContent = `Task done in ${message.stepCount ?? message.steps ?? 1} step(s)${reasonText}`;
+      } else if (message.type === 'TASK_EXHAUSTED') {
+        updateUI(false, null, Date.now());
+        const max = message.maxSteps ?? message.stepCount ?? message.steps ?? 10;
+        statusInfo.textContent = `Task stopped: reached maximum steps (${max}) without completion`;
       }
     });
   }
@@ -162,24 +188,24 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── LLM Settings Panel ───────────────────────────────────────────────────
-  const cloudModeToggle = document.getElementById('cloudModeToggle');
-  const cloudSettings   = document.getElementById('cloudSettings');
-  const providerSelect  = document.getElementById('providerSelect');
-  const modelInput      = document.getElementById('modelInput');
-  const apiKeyInput     = document.getElementById('apiKeyInput');
-  const apiKeyGroup     = document.getElementById('apiKeyGroup');
-  const baseUrlInput    = document.getElementById('baseUrlInput');
-  const baseUrlGroup    = document.getElementById('baseUrlGroup');
-  const modelHint       = document.getElementById('modelHint');
-  const toggleKeyBtn    = document.getElementById('toggleKeyVisibility');
-  const saveLlmBtn      = document.getElementById('saveLlmConfig');
-  const saveStatus      = document.getElementById('saveStatus');
-  const llmModeLabel    = document.getElementById('llmModeLabel');
+  const cloudModeToggle      = document.getElementById('cloudModeToggle');
+  const cloudSettings        = document.getElementById('cloudSettings');
+  const providerSelect       = document.getElementById('providerSelect');
+  const modelInput           = document.getElementById('modelInput');
+  const apiKeyInput          = document.getElementById('apiKeyInput');
+  const toggleApiKeyBtn      = document.getElementById('toggleApiKeyVisibility');
+  const serverTokenInput     = document.getElementById('serverTokenInput');
+  const baseUrlInput         = document.getElementById('baseUrlInput');
+  const baseUrlGroup         = document.getElementById('baseUrlGroup');
+  const modelHint            = document.getElementById('modelHint');
+  const toggleServerTokenBtn = document.getElementById('toggleServerTokenVisibility');
+  const saveLlmBtn           = document.getElementById('saveLlmConfig');
+  const saveStatus           = document.getElementById('saveStatus');
+  const llmModeLabel         = document.getElementById('llmModeLabel');
 
   function applyProviderMeta(provider) {
-    const meta = PROVIDER_META[provider] || { hint: '', needsKey: true, needsBaseUrl: false };
+    const meta = PROVIDER_META[provider] || { hint: '', needsBaseUrl: false };
     modelHint.textContent = meta.hint ? `e.g. ${meta.hint}` : '';
-    apiKeyGroup.style.display = meta.needsKey ? '' : 'none';
     baseUrlGroup.style.display = meta.needsBaseUrl ? '' : 'none';
     if (meta.needsBaseUrl && DEFAULT_BASE_URLS[provider] && !baseUrlInput.value) {
       baseUrlInput.value = DEFAULT_BASE_URLS[provider];
@@ -198,21 +224,30 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.runtime.sendMessage({ type: 'SET_LLM_MODE', mode: isCloud ? 'cloud' : 'local' });
   });
 
-  if (toggleKeyBtn) {
-    toggleKeyBtn.addEventListener('click', () => {
+  if (toggleApiKeyBtn && apiKeyInput) {
+    toggleApiKeyBtn.addEventListener('click', () => {
       const isPassword = apiKeyInput.type === 'password';
       apiKeyInput.type = isPassword ? 'text' : 'password';
-      toggleKeyBtn.textContent = isPassword ? '🙈' : '👁';
+      toggleApiKeyBtn.textContent = isPassword ? '🙈' : '👁';
+    });
+  }
+
+  if (toggleServerTokenBtn && serverTokenInput) {
+    toggleServerTokenBtn.addEventListener('click', () => {
+      const isPassword = serverTokenInput.type === 'password';
+      serverTokenInput.type = isPassword ? 'text' : 'password';
+      toggleServerTokenBtn.textContent = isPassword ? '🙈' : '👁';
     });
   }
 
   if (saveLlmBtn) {
     saveLlmBtn.addEventListener('click', () => {
       const config = {
-        provider: providerSelect.value,
-        model:    modelInput.value.trim(),
-        apiKey:   apiKeyInput.value.trim(),
-        baseUrl:  baseUrlInput.value.trim(),
+        provider:    providerSelect.value,
+        model:       modelInput.value.trim(),
+        apiKey:      apiKeyInput ? apiKeyInput.value.trim() : '',
+        baseUrl:     baseUrlInput.value.trim(),
+        serverToken: serverTokenInput ? serverTokenInput.value.trim() : '',
       };
 
       if (!config.model) {
@@ -244,8 +279,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const c = data.llmConfig;
       if (c.provider) providerSelect.value = c.provider;
       if (c.model)    modelInput.value = c.model;
-      if (c.apiKey)   apiKeyInput.value = c.apiKey;
+      if (c.apiKey && apiKeyInput) apiKeyInput.value = c.apiKey;
       if (c.baseUrl)  baseUrlInput.value = c.baseUrl;
+      if (c.serverToken && serverTokenInput) serverTokenInput.value = c.serverToken;
     }
     applyProviderMeta(providerSelect.value);
   });
@@ -307,8 +343,269 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ── Secret Vault UI ───────────────────────────────────────────────────────
+  const secretsSectionHeader   = document.getElementById('secretsSectionHeader');
+  const secretsContent         = document.getElementById('secretsContent');
+  const secretsToggleIcon      = document.getElementById('secretsToggleIcon');
+  const secretAliasInput       = document.getElementById('secretAliasInput');
+  const secretValueInput       = document.getElementById('secretValueInput');
+  const toggleSecretVisibility = document.getElementById('toggleSecretVisibility');
+  const saveSecretBtn          = document.getElementById('saveSecretBtn');
+  const secretSaveStatus       = document.getElementById('secretSaveStatus');
+  const secretList             = document.getElementById('secretList');
+  const emptySecretsMsg        = document.getElementById('emptySecretsMsg');
+  const secretCountBadge       = document.getElementById('secretCountBadge');
+
+  let secretsCollapsed = false;
+
+  if (secretsSectionHeader && secretsContent) {
+    secretsSectionHeader.addEventListener('click', () => {
+      secretsCollapsed = !secretsCollapsed;
+      secretsContent.classList.toggle('hidden', secretsCollapsed);
+      if (secretsToggleIcon) {
+        secretsToggleIcon.style.transform = secretsCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
+      }
+    });
+  }
+
+  if (toggleSecretVisibility && secretValueInput) {
+    toggleSecretVisibility.addEventListener('click', () => {
+      const isPassword = secretValueInput.type === 'password';
+      secretValueInput.type = isPassword ? 'text' : 'password';
+      toggleSecretVisibility.textContent = isPassword ? '🙈' : '👁';
+    });
+  }
+
+  function showSecretStatus(text, color = '#34d399', durationMs = 2500) {
+    if (!secretSaveStatus) return;
+    secretSaveStatus.style.color = color;
+    secretSaveStatus.textContent = text;
+    if (durationMs > 0) {
+      setTimeout(() => {
+        if (secretSaveStatus.textContent === text) {
+          secretSaveStatus.textContent = '';
+        }
+      }, durationMs);
+    }
+  }
+
+  function loadSecretsFromVault(callback) {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+      if (callback) callback({});
+      return;
+    }
+    chrome.storage.local.get(['secrets', 'secret_aliases'], (data) => {
+      if (chrome.runtime?.lastError) {
+        if (callback) callback({});
+        return;
+      }
+      const secrets = (data && data.secrets) || {};
+      if (callback) callback(secrets);
+    });
+  }
+
+  function saveSecretToVault(alias, value, callback) {
+    const cleanAlias = String(alias || '').trim();
+    const cleanValue = String(value || '');
+
+    if (!cleanAlias) {
+      if (callback) callback({ success: false, error: 'Alias name is required' });
+      return;
+    }
+    if (!cleanValue) {
+      if (callback) callback({ success: false, error: 'Secret value is required' });
+      return;
+    }
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+      if (callback) callback({ success: false, error: 'chrome.storage.local unavailable' });
+      return;
+    }
+
+    chrome.storage.local.get(['secrets', 'secret_aliases'], (data) => {
+      if (chrome.runtime?.lastError) {
+        if (callback) callback({ success: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+
+      const secrets = Object.assign({}, data && data.secrets);
+      secrets[cleanAlias] = cleanValue;
+
+      const existingAliases = Array.isArray(data?.secret_aliases)
+        ? data.secret_aliases
+        : Object.keys(secrets);
+      const aliases = Array.from(new Set([...existingAliases, cleanAlias]));
+
+      const payload = {
+        secrets,
+        secret_aliases: aliases,
+        [cleanAlias]: cleanValue,
+        [`secret_${cleanAlias}`]: cleanValue
+      };
+
+      chrome.storage.local.set(payload, () => {
+        if (chrome.runtime && chrome.runtime.lastError) {
+          if (callback) callback({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          if (callback) callback({ success: true, alias: cleanAlias });
+        }
+      });
+    });
+  }
+
+  function deleteSecretFromVault(alias, callback) {
+    const cleanAlias = String(alias || '').trim();
+    if (!cleanAlias) {
+      if (callback) callback({ success: false, error: 'Alias name is required' });
+      return;
+    }
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+      if (callback) callback({ success: false, error: 'chrome.storage.local unavailable' });
+      return;
+    }
+
+    chrome.storage.local.get(['secrets', 'secret_aliases'], (data) => {
+      if (chrome.runtime?.lastError) {
+        if (callback) callback({ success: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+
+      const secrets = Object.assign({}, data && data.secrets);
+      delete secrets[cleanAlias];
+
+      const existingAliases = Array.isArray(data?.secret_aliases)
+        ? data.secret_aliases
+        : Object.keys(secrets);
+      const aliases = existingAliases.filter((a) => a !== cleanAlias);
+
+      chrome.storage.local.set({
+        secrets,
+        secret_aliases: aliases
+      }, () => {
+        if (chrome.storage.local.remove) {
+          chrome.storage.local.remove([cleanAlias, `secret_${cleanAlias}`], () => {
+            if (chrome.runtime && chrome.runtime.lastError) {
+              if (callback) callback({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              if (callback) callback({ success: true, alias: cleanAlias });
+            }
+          });
+        } else {
+          if (callback) callback({ success: true, alias: cleanAlias });
+        }
+      });
+    });
+  }
+
+  function renderSecretsList(secretsMap) {
+    if (!secretList) return;
+    secretList.innerHTML = '';
+    const aliases = Object.keys(secretsMap || {}).sort();
+
+    if (secretCountBadge) {
+      secretCountBadge.textContent = `${aliases.length} secret${aliases.length === 1 ? '' : 's'}`;
+    }
+
+    if (aliases.length === 0) {
+      if (emptySecretsMsg) emptySecretsMsg.style.display = 'block';
+      return;
+    }
+
+    if (emptySecretsMsg) emptySecretsMsg.style.display = 'none';
+
+    for (const alias of aliases) {
+      const row = document.createElement('div');
+      row.className = 'secret-item';
+      row.dataset.alias = alias;
+
+      const infoDiv = document.createElement('div');
+      infoDiv.className = 'secret-item-info';
+
+      const aliasEl = document.createElement('span');
+      aliasEl.className = 'secret-alias';
+      aliasEl.textContent = alias;
+
+      const maskedEl = document.createElement('span');
+      maskedEl.className = 'secret-masked';
+      maskedEl.textContent = '•••••••• (vaulted)';
+
+      infoDiv.appendChild(aliasEl);
+      infoDiv.appendChild(maskedEl);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'icon-btn-delete';
+      deleteBtn.title = `Delete ${alias}`;
+      deleteBtn.textContent = '✕';
+      deleteBtn.setAttribute('aria-label', `Delete secret ${alias}`);
+      deleteBtn.addEventListener('click', () => {
+        deleteSecretFromVault(alias, (res) => {
+          if (res && res.success) {
+            showSecretStatus(`✓ Deleted ${alias}`, '#f87171');
+            refreshSecrets();
+          } else {
+            showSecretStatus(`Error: ${res?.error || 'failed to delete'}`, '#f87171');
+          }
+        });
+      });
+
+      row.appendChild(infoDiv);
+      row.appendChild(deleteBtn);
+      secretList.appendChild(row);
+    }
+  }
+
+  function refreshSecrets() {
+    loadSecretsFromVault((secrets) => {
+      renderSecretsList(secrets);
+    });
+  }
+
+  if (saveSecretBtn) {
+    saveSecretBtn.addEventListener('click', () => {
+      const alias = secretAliasInput ? secretAliasInput.value.trim() : '';
+      const value = secretValueInput ? secretValueInput.value : '';
+
+      if (!alias) {
+        showSecretStatus('Alias name is required', '#f87171');
+        return;
+      }
+      if (!value) {
+        showSecretStatus('Secret value is required', '#f87171');
+        return;
+      }
+
+      saveSecretToVault(alias, value, (res) => {
+        if (res && res.success) {
+          // Immediately wipe input values to prevent plaintext retention
+          if (secretAliasInput) secretAliasInput.value = '';
+          if (secretValueInput) {
+            secretValueInput.value = '';
+            secretValueInput.type = 'password';
+          }
+          if (toggleSecretVisibility) toggleSecretVisibility.textContent = '👁';
+
+          showSecretStatus(`✓ Saved ${alias} to vault`, '#34d399');
+          refreshSecrets();
+        } else {
+          showSecretStatus(`Error: ${res?.error || 'failed to save'}`, '#f87171');
+        }
+      });
+    });
+  }
+
+  // Expose on window for testing or script access
+  if (typeof window !== 'undefined') {
+    window.SecretVault = {
+      loadSecretsFromVault,
+      saveSecretToVault,
+      deleteSecretFromVault,
+      renderSecretsList,
+      refreshSecrets
+    };
+  }
+
   // ── Initial loads ────────────────────────────────────────────────────────
   fetchStatus();
   fetchRuntimeStatus();
   fetchHighlightStatus();
+  refreshSecrets();
 });

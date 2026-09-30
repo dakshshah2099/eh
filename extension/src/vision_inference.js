@@ -636,8 +636,57 @@ export async function runVisionInference(imageCanvasOrBase64, options = {}) {
   const minConfidence = typeof options.confidenceThreshold === 'number' ? options.confidenceThreshold : 0.25;
   const iouThreshold = typeof options.iouThreshold === 'number' ? options.iouThreshold : 0.45;
 
+  const isServiceWorker = typeof ServiceWorkerGlobalScope !== 'undefined' && self instanceof ServiceWorkerGlobalScope;
+  if (isServiceWorker && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+    try {
+      let imgSource = typeof imageCanvasOrBase64 === 'string'
+        ? imageCanvasOrBase64
+        : (typeof imageCanvasOrBase64?.toDataURL === 'function' ? imageCanvasOrBase64.toDataURL() : '');
+      if (imgSource) {
+        const offscreenResult = await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { target: 'offscreen', type: 'RUN_VISION_INFERENCE', imageSource: imgSource, options },
+            (response) => {
+              if (chrome.runtime.lastError || !response?.success) {
+                resolve(null);
+              } else {
+                resolve(response.detections || []);
+              }
+            }
+          );
+        });
+        if (Array.isArray(offscreenResult)) {
+          return offscreenResult;
+        }
+      }
+    } catch (_) {}
+  }
+
   if (!activeSession) {
-    await loadVisionModel(options);
+    if (isServiceWorker) {
+      try {
+        const parsed = await parseImageInput(imageCanvasOrBase64);
+        if (parsed) {
+          const proposals = extractVisualProposals(parsed);
+          return nonMaxSuppression(proposals.filter(p => p.confidence >= minConfidence), iouThreshold);
+        }
+      } catch (_) {}
+      return [];
+    }
+
+    try {
+      await loadVisionModel(options);
+    } catch (err) {
+      console.warn('[VisionInference] Could not load ONNX model in current context, using algorithmic UI proposal fallback:', err.message);
+      try {
+        const parsed = await parseImageInput(imageCanvasOrBase64);
+        if (parsed) {
+          const proposals = extractVisualProposals(parsed);
+          return nonMaxSuppression(proposals.filter(p => p.confidence >= minConfidence), iouThreshold);
+        }
+      } catch (_) {}
+      return [];
+    }
   }
 
   const { inputTensor, origWidth, origHeight, rawImageData } = await preprocessImage(
@@ -760,3 +809,22 @@ export async function runVisionInference(imageCanvasOrBase64, options = {}) {
 
   return finalDetections;
 }
+
+/**
+ * Detects whether the current runtime environment supports on-device ONNX vision inference.
+ * Verifies WebAssembly availability and functionality.
+ * @returns {boolean}
+ */
+export function isVisionRuntimeSupported() {
+  try {
+    if (typeof WebAssembly === 'undefined' || typeof WebAssembly.validate !== 'function') {
+      return false;
+    }
+    const minimalWasm = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+    return WebAssembly.validate(minimalWasm);
+  } catch (_) {
+    return false;
+  }
+}
+
+export { isVisionRuntimeSupported as isRuntimeSupported };

@@ -352,6 +352,80 @@ body {
   background-color: #b45309;
 }
 
+/* ── Secret Vault Section ── */
+.secrets-content {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+}
+
+.secrets-content.hidden {
+  display: none;
+}
+
+.secret-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.secret-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 8px;
+  gap: 8px;
+}
+
+.secret-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.secret-alias {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-main);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.secret-masked {
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.icon-btn-delete {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #f87171;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 6px;
+  line-height: 1;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.icon-btn-delete:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
 .footer {
   text-align: center;
   font-size: 10px;

@@ -90,12 +90,21 @@
         </div>
 
         <div class="field-group" id="apiKeyGroup">
-          <label class="field-label" for="apiKeyInput">API Key</label>
+          <label class="field-label" for="apiKeyInput">Provider API Key</label>
           <div class="key-row">
-            <input type="password" id="apiKeyInput" class="field-input" placeholder="sk-..." autocomplete="off" />
-            <button id="toggleKeyVisibility" class="icon-btn" title="Show/hide key">👁</button>
+            <input type="password" id="apiKeyInput" class="field-input" placeholder="e.g. gsk_..., sk-..., AIza..." autocomplete="off" />
+            <button id="toggleApiKeyVisibility" class="icon-btn" type="button" title="Show/hide API key">👁</button>
           </div>
-          <span class="field-hint">Stored locally in chrome.storage.local</span>
+          <span class="field-hint">Used for cloud planner directions on redacted screenshots</span>
+        </div>
+
+        <div class="field-group" id="serverTokenGroup">
+          <label class="field-label" for="serverTokenInput">Server Auth Token (optional)</label>
+          <div class="key-row">
+            <input type="password" id="serverTokenInput" class="field-input" placeholder="SERVER_API_KEY (Bearer token)" autocomplete="off" />
+            <button id="toggleServerTokenVisibility" class="icon-btn" type="button" title="Show/hide token">👁</button>
+          </div>
+          <span class="field-hint">Optional server ingress Bearer token</span>
         </div>
 
         <div class="field-group" id="baseUrlGroup" style="display:none;">
@@ -105,6 +114,54 @@
 
         <button id="saveLlmConfig" class="btn btn-save">Save Config</button>
         <span id="saveStatus" class="save-status"></span>
+      </div>
+    </div>
+
+    <!-- Secret Vault Card (Settings -> Secrets) -->
+    <div class="card" id="secretsCard">
+      <div class="section-header" id="secretsSectionHeader" style="cursor: pointer;" title="Toggle Secret Vault">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="font-size: 13px;">🔒</span>
+          <span class="label" style="color: var(--text-main); font-weight: 600;">Secret Vault</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span id="secretCountBadge" class="version">0 secrets</span>
+          <span id="secretsToggleIcon" style="font-size: 10px; color: var(--text-muted); transition: transform 0.2s;">▼</span>
+        </div>
+      </div>
+
+      <div id="secretsContent" class="secrets-content">
+        <p class="field-hint" style="margin-bottom: 8px;">
+          Credentials for <code>fill_secret</code>. Stored locally via <code>chrome.storage.local</code>. Never sent to server.
+        </p>
+
+        <!-- Stored secrets list -->
+        <div id="secretsListContainer" style="margin-bottom: 10px;">
+          <div id="emptySecretsMsg" class="info-text" style="font-style: italic; padding: 4px 0; font-size: 11px;">
+            No secrets provisioned yet.
+          </div>
+          <div id="secretList" class="secret-list">
+            <!-- Dynamically populated alias rows -->
+          </div>
+        </div>
+
+        <!-- Add new secret form -->
+        <div class="field-group" style="margin-bottom: 6px;">
+          <label class="field-label" for="secretAliasInput">Alias Name</label>
+          <input type="text" id="secretAliasInput" class="field-input" placeholder="e.g. ACCOUNT_PASSWORD" autocomplete="off" />
+        </div>
+
+        <div class="field-group" style="margin-bottom: 8px;">
+          <label class="field-label" for="secretValueInput">Secret Value</label>
+          <div class="key-row">
+            <input type="password" id="secretValueInput" class="field-input" placeholder="Enter sensitive value" autocomplete="off" />
+            <button id="toggleSecretVisibility" class="icon-btn" title="Show/hide secret before saving">👁</button>
+          </div>
+          <span class="field-hint">Never displayed in plaintext after saving</span>
+        </div>
+
+        <button id="saveSecretBtn" class="btn btn-save" style="margin-bottom: 4px;">Save Secret</button>
+        <span id="secretSaveStatus" class="save-status"></span>
       </div>
     </div>
 

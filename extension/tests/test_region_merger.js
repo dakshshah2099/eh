@@ -18,7 +18,8 @@ import {
   combineConfidences,
   shouldMerge,
   DEFAULT_CATEGORY_PRIORITY,
-  DEFAULT_SOURCE_ORDER
+  DEFAULT_SOURCE_ORDER,
+  normalizeUIElements
 } from '../src/region_merger.js';
 
 test('Region Merger: Helper normalizeBBox handles all supported formats', () => {
@@ -260,3 +261,81 @@ test('Region Merger: Sort options (confidence, category, reading-order)', () => 
   assert.equal(byReading[1].bbox[1], 200);
   assert.equal(byReading[2].bbox[1], 300);
 });
+
+test('Ticket 01 / C1: normalizeUIElements formats vision detections into ui_elements structure', () => {
+  // Empty / invalid input safety
+  assert.deepEqual(normalizeUIElements(), []);
+  assert.deepEqual(normalizeUIElements(null), []);
+  assert.deepEqual(normalizeUIElements([]), []);
+
+  const inputVisionDetections = [
+    { bbox: [10, 20, 100, 40], label: 'button', confidence: 0.95 },
+    { bbox: { x: 50, y: 150, width: 200, height: 35 }, label: 'input', confidence: 0.8 },
+    { bbox: [0, 0, 0, 0], label: 'zero-area-icon' }, // Degenerate: should be skipped
+    { bbox: [30, 40, -10, 20], label: 'negative-dim' }, // Degenerate: should be skipped
+    { bbox: [120, 80, 24, 24], category: 'icon', element_id: 'settings-cog' }
+  ];
+
+  const result = normalizeUIElements(inputVisionDetections);
+  assert.equal(result.length, 3);
+
+  // First element: button
+  assert.deepEqual(result[0].bbox, [10, 20, 100, 40]);
+  assert.equal(result[0].category, 'button');
+  assert.equal(result[0].label, 'button');
+  assert.equal(result[0].source, 'vision');
+  assert.equal(result[0].confidence, 0.95);
+
+  // Second element: input with object bbox format
+  assert.deepEqual(result[1].bbox, [50, 150, 200, 35]);
+  assert.equal(result[1].category, 'input');
+  assert.equal(result[1].label, 'input');
+  assert.equal(result[1].source, 'vision');
+  assert.equal(result[1].confidence, 0.8);
+
+  // Third element: icon preserving extra fields
+  assert.deepEqual(result[2].bbox, [120, 80, 24, 24]);
+  assert.equal(result[2].category, 'icon');
+  assert.equal(result[2].label, 'icon');
+  assert.equal(result[2].source, 'vision');
+  assert.equal(result[2].confidence, 1.0);
+  assert.equal(result[2].element_id, 'settings-cog');
+});
+
+test('Ticket 01 / C1: mergeSensitiveRegions only ingests DOM, face, OCR regions and rejects UI vision regions', () => {
+  const domRegions = [
+    { bbox: [10, 10, 100, 30], category: 'password', source: 'dom', confidence: 1.0 }
+  ];
+  const faceRegions = [
+    { bbox: [150, 50, 80, 80], category: 'face', source: 'face', confidence: 0.9 }
+  ];
+  const ocrRegions = [
+    { bbox: [10, 200, 120, 25], category: 'phone', source: 'ocr', confidence: 0.85 }
+  ];
+  const uiRegions = [
+    { bbox: [10, 10, 100, 30], category: 'button', source: 'vision', confidence: 0.95 },
+    { bbox: [300, 300, 50, 50], category: 'ui_element', source: 'vision', confidence: 0.9 }
+  ];
+
+  // Call with uiRegions passed as 4th arg - must be ignored!
+  const merged = mergeSensitiveRegions(domRegions, faceRegions, ocrRegions, uiRegions, { preserveExtraFields: true });
+  assert.equal(merged.length, 3);
+  for (const r of merged) {
+    assert.notEqual(r.source, 'vision');
+    assert.equal(r.source.includes('vision'), false);
+    assert.notEqual(r.category, 'button');
+    assert.notEqual(r.category, 'ui_element');
+  }
+
+  // Passing array containing vision elements directly - vision elements must be filtered out
+  const directVisionInput = [
+    { bbox: [10, 10, 50, 50], category: 'button', source: 'vision' },
+    { bbox: [60, 60, 50, 50], category: 'ui_element', source: 'unknown' },
+    { bbox: [100, 100, 50, 50], category: 'password', source: 'dom' }
+  ];
+  const mergedDirect = mergeSensitiveRegions(directVisionInput);
+  assert.equal(mergedDirect.length, 1);
+  assert.equal(mergedDirect[0].category, 'password');
+  assert.equal(mergedDirect[0].source, 'dom');
+});
+

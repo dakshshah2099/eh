@@ -49,6 +49,7 @@
         "vendor/ort/*",
         "vendor/transformers/*",
         "models/*",
+        "src/action_schema.js",
         "src/content_script.js"
       ],
       "matches": ["<all_urls>"]

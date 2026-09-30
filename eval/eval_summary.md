@@ -1,8 +1,8 @@
 # Redaction Evaluation Report (Ticket 19)
 
-**Execution Date:** 2026-09-29T17:12:34.203Z  
-**Evaluation Duration:** 1951ms  
-**Target Environment:** Demo Test Harness (`http://127.0.0.1:13118/index.html`)  
+**Execution Date:** 2026-09-30T04:41:43.821Z  
+**Evaluation Duration:** 2133ms  
+**Target Environment:** Demo Test Harness (`http://127.0.0.1:8901/index.html`)  
 **Browser Engine:** Google Chrome via Playwright (Headless MV3 Runner)
 
 ---

@@ -20,8 +20,8 @@ import { downscaleImage, calculateTargetDimensions, blobToBase64 } from './downs
 import { detectSensitiveDomElements, extractSemanticIdentities, correlateFaceWithHeadings } from './dom_detector.js';
 import { detectFaces } from './face_detector.js';
 import { detectSensitiveOCRRegions } from './ocr_detector.js';
-import { runVisionInference } from './vision_inference.js';
-import { mergeSensitiveRegions } from './region_merger.js';
+import { runVisionInference, getVisionSession, isVisionRuntimeSupported, detectBackend } from './vision_inference.js';
+import { mergeSensitiveRegions, normalizeUIElements } from './region_merger.js';
 import { redactCanvas, canvasToDataUrl } from './image_redaction.js';
 import { redactDomSkeleton } from './dom_redaction.js';
 import { buildPayload, sendPayloadToServer, DEFAULT_SERVER_URL } from './transport.js';
@@ -259,6 +259,15 @@ export function assertPayloadSanitized(sanitizedPayload, rawDom, rawImage = '') 
       throw new Error('[Pipeline] SecurityError: Potential unredacted sensitive pattern detected in sanitized DOM');
     }
   }
+
+  // 3. Redaction map sanity check - assert no UI vision items in redaction_map (Ticket 01 / C1)
+  if (Array.isArray(sanitizedPayload.redaction_map)) {
+    for (const r of sanitizedPayload.redaction_map) {
+      if (r?.source === 'vision' || (typeof r?.source === 'string' && r.source.split('+').includes('vision'))) {
+        throw new Error('[Pipeline] SecurityError: redaction_map must not contain UI vision items');
+      }
+    }
+  }
 }
 
 /**
@@ -439,20 +448,32 @@ export async function executePipeline(options = {}) {
   // STEP 5B: Run UI element vision detector on canvas (09)
   // =========================================================================
   const tVisionStart = performance.now();
-  let uiRegions = [];
+  let rawUiRegions = [];
+
+  const runtimeSupported = typeof options.isRuntimeSupported === 'function'
+    ? options.isRuntimeSupported()
+    : (options.isRuntimeSupported !== undefined ? Boolean(options.isRuntimeSupported) : isVisionRuntimeSupported());
+
+  // Ticket 02 / C2: Default enableVisionInference to true unless explicitly false or runtime unsupported
+  const enableVisionInference = options.enableVisionInference !== undefined
+    ? Boolean(options.enableVisionInference)
+    : runtimeSupported;
+
   const shouldRunVision = Array.isArray(options.uiRegions)
-    || typeof options.runVisionInference === 'function'
-    || Boolean(options.enableVisionInference);
+    || (enableVisionInference && (typeof options.runVisionInference === 'function' || runtimeSupported));
+
+  let visionRan = false;
 
   if (Array.isArray(options.uiRegions)) {
-    uiRegions = options.uiRegions;
+    rawUiRegions = options.uiRegions;
   } else if (shouldRunVision && canvas) {
     const visionDetectFn = typeof options.runVisionInference === 'function'
       ? options.runVisionInference
       : runVisionInference;
     try {
+      visionRan = true;
       const detectedUI = await visionDetectFn(canvas, options.visionOptions || {});
-      uiRegions = (detectedUI || []).map(item => ({
+      rawUiRegions = (detectedUI || []).map(item => ({
         bbox: item.bbox,
         category: item.label || 'ui_element',
         source: 'vision',
@@ -464,11 +485,41 @@ export async function executePipeline(options = {}) {
         throw new Error(`[Pipeline] SecurityError: Vision model inference failed: ${err.message}`);
       }
       console.warn('[Pipeline] Vision model inference error:', err.message);
-      uiRegions = [];
+      rawUiRegions = [];
     }
   }
+
+  // Ticket 01 / C1: Normalize vision detections into ui_elements.
+  // These are strictly UI grounding targets for the planner and must never touch redaction.
+  const uiElements = normalizeUIElements(rawUiRegions);
+  const uiRegions = uiElements;
   const vision_detect_ms = Number((performance.now() - tVisionStart).toFixed(3));
-  console.log(`[Pipeline] Step 5B Complete: Detected ${uiRegions.length} UI vision elements [${vision_detect_ms.toFixed(2)}ms]`);
+  const vision_element_count = uiElements.length;
+
+  // Determine vision backend telemetry string
+  let vision_backend = options.visionBackend || options.vision_backend;
+  if (!vision_backend) {
+    if (!shouldRunVision && !Array.isArray(options.uiRegions)) {
+      vision_backend = 'none';
+    } else if (typeof options.runVisionInference === 'function') {
+      vision_backend = options.runVisionInference.backend || 'mock';
+    } else if (Array.isArray(options.uiRegions)) {
+      vision_backend = 'fixture';
+    } else if (getVisionSession()?.backend) {
+      vision_backend = getVisionSession().backend;
+    } else if (visionRan || shouldRunVision) {
+      try {
+        const bInfo = await detectBackend();
+        vision_backend = bInfo.selectedBackend || 'wasm';
+      } catch (_) {
+        vision_backend = 'wasm';
+      }
+    } else {
+      vision_backend = 'none';
+    }
+  }
+
+  console.log(`[Pipeline] Step 5B Complete: Detected ${uiElements.length} UI vision elements [${vision_detect_ms.toFixed(2)}ms, backend: ${vision_backend}]`);
 
   // =========================================================================
   // STEP 6: Merge all sensitive regions with region_merger.js (13)
@@ -505,12 +556,15 @@ export async function executePipeline(options = {}) {
 
   const allDomRegions = [...scaledDomRegions, ...scaledFaceHeadings];
 
-  const mergedRegions = mergeSensitiveRegions(allDomRegions, faceRegions, ocrRegions, uiRegions, {
+  // Ticket 01 / C1: mergeSensitiveRegions only ingests DOM, face, OCR regions.
+  // uiRegions is never passed.
+  const privacyRegions = mergeSensitiveRegions(allDomRegions, faceRegions, ocrRegions, {
     ...(options.mergerOptions || {}),
     preserveExtraFields: true
   });
+  const mergedRegions = privacyRegions;
   const region_merge_ms = Number((performance.now() - tMergeStart).toFixed(3));
-  console.log(`[Pipeline] Step 6 Complete: Merged into ${mergedRegions.length} canonical sensitive regions [${region_merge_ms.toFixed(2)}ms]`);
+  console.log(`[Pipeline] Step 6 Complete: Merged into ${privacyRegions.length} canonical sensitive regions [${region_merge_ms.toFixed(2)}ms]`);
 
   // =========================================================================
   // STEP 7: Redact image canvas with image_redaction.js (14)
@@ -524,11 +578,18 @@ export async function executePipeline(options = {}) {
   }
 
   ensureCanvasContextSafety(canvas);
+
+  // Ticket 01 / C1: Guard that no source:'vision' reaches redactCanvas
+  const leakedVisionToCanvas = privacyRegions.filter(r => r.source === 'vision' || (typeof r.source === 'string' && r.source.split('+').includes('vision')));
+  if (leakedVisionToCanvas.length > 0) {
+    throw new Error('[Pipeline] SecurityError: UI vision regions leaked into privacy redaction targets');
+  }
+
   try {
     const redactCanvasFn = typeof options.redactCanvas === 'function'
       ? options.redactCanvas
       : redactCanvas;
-    const redactResult = redactCanvasFn(canvas, mergedRegions, {
+    const redactResult = redactCanvasFn(canvas, privacyRegions, {
       ...(options.imageRedactionOptions || {}),
       returnType: 'both'
     });
@@ -555,7 +616,7 @@ export async function executePipeline(options = {}) {
   // =========================================================================
   const tDomRedactStart = performance.now();
   // Map merged regions back to viewport coordinate space for DOM matching
-  const domRedactionRegions = mergedRegions.map((r) => {
+  const domRedactionRegions = privacyRegions.map((r) => {
     if (r.originalBbox) {
       return { ...r, bbox: r.originalBbox };
     }
@@ -607,13 +668,13 @@ export async function executePipeline(options = {}) {
       height: canvas.height || viewport.height,
       scale: scale || 1.0
     },
-    redaction_map: mergedRegions,
-    ui_elements: uiRegions,
+    redaction_map: privacyRegions,
+    ui_elements: uiElements,
     llmConfig: options.llmConfig,
     provider: options.provider,
     model: options.model,
     baseUrl: options.baseUrl || options.base_url,
-    apiKey: options.apiKey || options.api_key,
+    serverKeyMode: options.serverKeyMode,
     session_id: options.session_id || options.sessionId,
     task_id: options.task_id || options.taskId
   });
@@ -631,7 +692,12 @@ export async function executePipeline(options = {}) {
   let plan = null;
   if (sendToServer) {
     console.log(`[Pipeline] Step 10: Sending sanitized payload to ${serverUrl}...`);
-    plan = await sendPayloadToServer(sanitizedPayload, serverUrl, options.fetchOptions || {});
+    const fetchOpts = { ...(options.fetchOptions || {}) };
+    const serverAuthToken = options.serverToken || options.serverApiKey || options.llmConfig?.serverToken;
+    if (serverAuthToken && !fetchOpts.serverApiKey && !fetchOpts.serverToken) {
+      fetchOpts.serverApiKey = serverAuthToken;
+    }
+    plan = await sendPayloadToServer(sanitizedPayload, serverUrl, fetchOpts);
     console.log('[Pipeline] Step 10 Complete: Received plan actions from server');
   } else {
     console.log('[Pipeline] Step 10 Skipped: sendToServer is false');
@@ -650,6 +716,9 @@ export async function executePipeline(options = {}) {
     face_detect_ms,
     ocr_detect_ms,
     vision_detect_ms,
+    vision_inference_ms: vision_detect_ms,
+    vision_backend,
+    vision_element_count,
     region_merge_ms,
     image_redact_ms,
     dom_redact_ms,
@@ -669,16 +738,26 @@ export async function executePipeline(options = {}) {
     console.log(
       `[Pipeline] Timings (${total_client_ms}ms, budget <${LATENCY_BUDGET_MS}ms): ` +
       `capture=${capture_ms}ms, dom_extract=${dom_extract_ms}ms, dom_detect=${dom_detect_ms}ms, ` +
-      `face_detect=${face_detect_ms}ms, ocr_detect=${ocr_detect_ms}ms, region_merge=${region_merge_ms}ms, ` +
-      `image_redact=${image_redact_ms}ms, dom_redact=${dom_redact_ms}ms, transport=${transport_ms}ms`
+      `face_detect=${face_detect_ms}ms, ocr_detect=${ocr_detect_ms}ms, vision_detect=${vision_detect_ms}ms (backend=${vision_backend}, count=${vision_element_count}), ` +
+      `region_merge=${region_merge_ms}ms, image_redact=${image_redact_ms}ms, dom_redact=${dom_redact_ms}ms, transport=${transport_ms}ms`
     );
   }
+
+  const telemetry = {
+    vision_backend,
+    vision_detect_ms,
+    vision_inference_ms: vision_detect_ms,
+    vision_element_count
+  };
 
   return {
     success: true,
     plan,
     payload: sanitizedPayload,
+    privacyRegions,
     mergedRegions,
+    uiElements,
+    uiRegions,
     domRegions,
     faceRegions,
     ocrRegions,
@@ -686,7 +765,12 @@ export async function executePipeline(options = {}) {
     redactedDom,
     scale,
     viewport,
-    timings
+    timings,
+    telemetry,
+    vision_backend,
+    vision_detect_ms,
+    vision_inference_ms: vision_detect_ms,
+    vision_element_count
   };
 }
 
@@ -694,6 +778,7 @@ export async function executePipeline(options = {}) {
 if (typeof globalThis !== 'undefined') {
   globalThis.executePipeline = executePipeline;
   globalThis.runRedactionPipeline = executePipeline;
+  globalThis.normalizeUIElements = normalizeUIElements;
 }
 
-export { executePipeline as runRedactionPipeline, executePipeline as runPipeline };
+export { executePipeline as runRedactionPipeline, executePipeline as runPipeline, normalizeUIElements };

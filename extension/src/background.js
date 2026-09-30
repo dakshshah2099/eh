@@ -4,6 +4,12 @@ import { sendPayloadToServer, buildPayload, DEFAULT_SERVER_URL } from './transpo
 import { executePipeline } from './pipeline.js';
 import { defaultProfiler, LatencyProfiler, LATENCY_BUDGET_MS } from './profiler.js';
 import { detectSensitiveDomElements } from './dom_detector.js';
+import {
+  classifyActionRisk,
+  enforceConfirmationGate,
+  ConfirmationRequired,
+  ConfirmationDeclined
+} from './action_policy.js';
 
 let agentState = {
   isRunning: false,
@@ -243,6 +249,7 @@ export async function captureAndSendPlan({
   maxDimension = 768,
   captureOptions = {},
   domOptions = {},
+  enableVisionInference,
   ...rest
 } = {}) {
   let targetTabId = tabId;
@@ -262,6 +269,7 @@ export async function captureAndSendPlan({
     captureOptions,
     domOptions,
     sendToServer: true,
+    ...(enableVisionInference !== undefined ? { enableVisionInference } : {}),
     ...rest
   });
 }
@@ -276,6 +284,26 @@ export async function waitForDomSettle(tabId = null, settleMs = 300) {
   const delay = Math.max(50, settleMs);
   await new Promise(resolve => setTimeout(resolve, delay));
   return true;
+}
+
+/**
+ * Broadcasts a task status message to runtime listeners (e.g. popup).
+ * Safely suppresses errors if popup or listeners are not open.
+ * @param {object} message
+ */
+export function broadcastTaskMessage(message) {
+  try {
+    if (typeof chrome !== 'undefined' && typeof chrome.runtime?.sendMessage === 'function') {
+      const res = chrome.runtime.sendMessage(message, () => {
+        if (chrome.runtime?.lastError) {
+          // Suppress error if popup / receiver is not listening
+        }
+      });
+      if (res && typeof res.catch === 'function') {
+        res.catch(() => {});
+      }
+    }
+  } catch (_) {}
 }
 
 /**
@@ -316,11 +344,16 @@ export async function startLoop(tabId = null, task = '', options = {}) {
   const redactionMap = opts.redactionMap || [];
   const onStep = opts.onStep;
 
+  const sessionId = opts.sessionId || opts.session_id || `tab_${targetTabId}`;
+  const taskId = opts.taskId || opts.task_id || `task_${Date.now()}`;
+
   await ensureOffscreenDocument();
   await ensureState();
   agentState.isRunning = true;
   agentState.currentTabId = targetTabId;
   agentState.currentTask = targetTask;
+  agentState.currentTaskId = taskId;
+  agentState.currentSessionId = sessionId;
   agentState.stepCount = 0;
   agentState.lastStartedAt = Date.now();
   await chrome.storage.local.set({ agentState });
@@ -330,6 +363,7 @@ export async function startLoop(tabId = null, task = '', options = {}) {
   const history = [];
   let step = 0;
   let taskComplete = false;
+  let completionReason = '';
   let lastPlan = null;
 
   try {
@@ -356,8 +390,8 @@ export async function startLoop(tabId = null, task = '', options = {}) {
         }
       } catch (_) {}
 
-      const sessionId = opts.sessionId || opts.session_id || `tab_${targetTabId}`;
-      const taskId = opts.taskId || opts.task_id || `task_${Date.now()}`;
+      const activeLlm = currentLlmConfig || opts.llmConfig;
+      const clientHasApiKey = Boolean(activeLlm?.apiKey || opts.apiKey || opts.api_key);
 
       const planResult = await captureAndSendPlan({
         task: targetTask,
@@ -367,9 +401,14 @@ export async function startLoop(tabId = null, task = '', options = {}) {
         maxDimension: opts.maxDimension ?? 768,
         captureOptions: opts.captureOptions ?? {},
         domOptions: opts.domOptions ?? {},
-        llmConfig: currentLlmConfig || opts.llmConfig,
+        llmConfig: activeLlm,
+        serverKeyMode: opts.serverKeyMode !== undefined ? opts.serverKeyMode : (!clientHasApiKey),
         session_id: sessionId,
-        task_id: taskId
+        task_id: taskId,
+        ...(opts.enableVisionInference !== undefined ? { enableVisionInference: opts.enableVisionInference } : {}),
+        ...(opts.visionOptions ? { visionOptions: opts.visionOptions } : {}),
+        ...(opts.runVisionInference ? { runVisionInference: opts.runVisionInference } : {}),
+        ...opts
       });
 
       lastPlan = planResult.plan;
@@ -378,6 +417,8 @@ export async function startLoop(tabId = null, task = '', options = {}) {
         step,
         timestamp: Date.now(),
         plan: lastPlan,
+        payload: planResult.payload || null,
+        planResult,
         timings: planResult.timings || null,
         total_client_ms: planResult.timings?.total_client_ms ?? null,
         actionResults: []
@@ -385,14 +426,24 @@ export async function startLoop(tabId = null, task = '', options = {}) {
 
       if (typeof onStep === 'function') {
         try {
-          await onStep({ step, plan: lastPlan, history });
+          await onStep({ step, plan: lastPlan, planResult, history });
         } catch (_) {}
       }
 
-      // Check for completion
-      if (lastPlan?.task_complete) {
+      // Check for immediate completion via 'done' action or task_complete flag
+      const doneAction = Array.isArray(lastPlan?.actions)
+        ? lastPlan.actions.find(a => (a?.type || a?.action || '').toLowerCase() === 'done')
+        : null;
+
+      if (doneAction || lastPlan?.task_complete) {
         console.log(`[Background] Task complete signaled at step ${step}.`);
         taskComplete = true;
+        completionReason = doneAction?.reason || lastPlan?.reason || '';
+        stepRecord.actionResults.push({
+          success: true,
+          action: 'done',
+          reason: completionReason
+        });
         history.push(stepRecord);
         break;
       }
@@ -409,6 +460,29 @@ export async function startLoop(tabId = null, task = '', options = {}) {
         if (!agentState.isRunning || opts.signal?.aborted) {
           break;
         }
+
+        const actType = (act?.type || act?.action || '').toLowerCase();
+        if (actType === 'done') {
+          console.log(`[Background] 'done' action reached at step ${step}.`);
+          taskComplete = true;
+          completionReason = act?.reason || lastPlan?.reason || '';
+          stepRecord.actionResults.push({
+            success: true,
+            action: 'done',
+            reason: completionReason
+          });
+          break;
+        }
+
+        // Ticket 07 / C7: Action-risk policy classification & confirmation gate
+        const policyContext = {
+          task: targetTask,
+          ui_elements: lastPlan?.ui_elements || planResult?.payload?.ui_elements || [],
+          step
+        };
+        classifyActionRisk(act, policyContext);
+        await enforceConfirmationGate(act, opts);
+
         console.log(`[Background] Executing action at step ${step}:`, act);
         const actionResult = await executeActionInTab(targetTabId, act);
         stepRecord.actionResults.push(actionResult);
@@ -416,7 +490,7 @@ export async function startLoop(tabId = null, task = '', options = {}) {
 
       history.push(stepRecord);
 
-      if (!agentState.isRunning || opts.signal?.aborted) {
+      if (taskComplete || !agentState.isRunning || opts.signal?.aborted) {
         break;
       }
 
@@ -429,16 +503,50 @@ export async function startLoop(tabId = null, task = '', options = {}) {
   } finally {
     agentState.isRunning = false;
     agentState.lastStoppedAt = Date.now();
+    agentState.lastCompletionStatus = taskComplete ? 'done' : (step >= maxSteps ? 'exhausted' : null);
+    agentState.lastCompletionReason = taskComplete ? completionReason : (step >= maxSteps ? 'Max steps reached' : null);
     await chrome.storage.local.set({ agentState });
     console.log(`[Background] Autonomous loop finished at step ${step}. Task complete: ${taskComplete}`);
+  }
+
+  // Notify listeners (popup, etc.) of completion or exhaustion
+  if (taskComplete) {
+    const donePayload = {
+      type: 'TASK_DONE',
+      stepCount: step,
+      steps: step,
+      reason: completionReason,
+      taskId,
+      sessionId
+    };
+    if (typeof opts.onTaskDone === 'function') {
+      try { opts.onTaskDone(donePayload); } catch (_) {}
+    }
+    broadcastTaskMessage(donePayload);
+  } else if (step >= maxSteps) {
+    const exhaustedPayload = {
+      type: 'TASK_EXHAUSTED',
+      stepCount: step,
+      steps: step,
+      maxSteps,
+      taskId,
+      sessionId
+    };
+    if (typeof opts.onTaskExhausted === 'function') {
+      try { opts.onTaskExhausted(exhaustedPayload); } catch (_) {}
+    }
+    broadcastTaskMessage(exhaustedPayload);
   }
 
   return {
     success: true,
     taskComplete,
+    reason: completionReason,
     stepsExecuted: step,
     maxStepsReached: !taskComplete && step >= maxSteps,
     finalPlan: lastPlan,
+    sessionId,
+    taskId,
     history
   };
 }
@@ -497,6 +605,11 @@ globalThis.getLatencySummary = getLatencySummary;
 globalThis.getLatencyRecords = getLatencyRecords;
 globalThis.clearLatencyMetrics = clearLatencyMetrics;
 globalThis.logLatencySummary = logLatencySummary;
+globalThis.classifyActionRisk = classifyActionRisk;
+globalThis.enforceConfirmationGate = enforceConfirmationGate;
+globalThis.ConfirmationRequired = ConfirmationRequired;
+globalThis.ConfirmationDeclined = ConfirmationDeclined;
+globalThis.broadcastTaskMessage = broadcastTaskMessage;
 
 export {
   downscaleImage,
@@ -507,7 +620,11 @@ export {
   defaultProfiler as profiler,
   LatencyProfiler,
   LATENCY_BUDGET_MS,
-  DEFAULT_SERVER_URL
+  DEFAULT_SERVER_URL,
+  classifyActionRisk,
+  enforceConfirmationGate,
+  ConfirmationRequired,
+  ConfirmationDeclined
 };
 
 // Initialize state from storage

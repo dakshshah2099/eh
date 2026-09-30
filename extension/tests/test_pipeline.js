@@ -22,6 +22,7 @@ import http from 'node:http';
 import zlib from 'node:zlib';
 
 import { executePipeline, assertPayloadSanitized } from '../src/pipeline.js';
+import { captureAndSendPlan } from '../src/background.js';
 import { REDACTION_TOKENS } from '../src/dom_redaction.js';
 
 /**
@@ -645,7 +646,7 @@ test('Fail-Closed Privacy: assertPayloadSanitized violation -> assert error thro
   }
 });
 
-test('UI Vision Integration: runVisionInference is invoked and produces source: "vision" in payload', async () => {
+test('UI Vision Integration: runVisionInference is invoked and produces ui_elements in payload without polluting redaction_map', async () => {
   let visionCalled = 0;
   const mockVisionInference = async (canvas, options) => {
     visionCalled++;
@@ -690,22 +691,26 @@ test('UI Vision Integration: runVisionInference is invoked and produces source: 
 
     assert.equal(visionCalled, 1, 'runVisionInference must be called exactly once per pipeline run');
     assert.ok(capturedPayload, 'Sanitized payload should have been posted');
-    
-    // Assert presence of source: "vision" in redaction_map / merged regions
+
+    // Ticket 01 / C1: Assert absence of source: "vision" in redaction_map / merged privacy regions
     const visionRegion = capturedPayload.redaction_map.find(r => r.source === 'vision' || r.source.includes('vision'));
-    assert.ok(visionRegion, 'Payload redaction_map must include a region with source: "vision"');
-    assert.deepEqual(visionRegion.bbox, [15, 25, 120, 40]);
+    assert.equal(visionRegion, undefined, 'Payload redaction_map must NOT include any region with source: "vision"');
+    assert.equal(result.privacyRegions.length, 0);
+    assert.equal(result.mergedRegions.length, 0);
 
     // Assert presence of ui_elements in payload
     assert.ok(Array.isArray(capturedPayload.ui_elements), 'Payload must include ui_elements array');
+    assert.equal(capturedPayload.ui_elements.length, 1);
+    assert.deepEqual(capturedPayload.ui_elements[0].bbox, [15, 25, 120, 40]);
     assert.equal(capturedPayload.ui_elements[0].category, 'button');
+    assert.equal(capturedPayload.ui_elements[0].label, 'button');
     assert.equal(capturedPayload.ui_elements[0].source, 'vision');
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('UI Vision Integration: Fixture with visible button and icon produces source: "vision" in merged regions', async () => {
+test('UI Vision Integration: Fixture with visible button and icon produces ui_elements and leaves privacy redaction regions empty', async () => {
   const canvas = createMockCanvas(320, 240);
   const domSkeleton = {
     tag: 'div',
@@ -730,11 +735,267 @@ test('UI Vision Integration: Fixture with visible button and icon produces sourc
   });
 
   assert.equal(result.success, true);
-  assert.equal(result.mergedRegions.length, 2);
-  const sources = result.mergedRegions.map(r => r.source);
-  assert.ok(sources.every(s => s === 'vision' || s.includes('vision')));
-  assert.deepEqual(result.mergedRegions[0].bbox, [20, 30, 100, 35]);
-  assert.deepEqual(result.mergedRegions[1].bbox, [200, 30, 32, 32]);
+  // Ticket 01 / C1: Privacy regions must be empty because no DOM/face/OCR sensitive targets exist
+  assert.equal(result.privacyRegions.length, 0);
+  assert.equal(result.mergedRegions.length, 0);
+  assert.equal(result.payload.redaction_map.length, 0);
+
+  // ui_elements must contain normalized vision outputs unredacted
+  assert.equal(result.uiElements.length, 2);
+  assert.equal(result.payload.ui_elements.length, 2);
+  assert.deepEqual(result.payload.ui_elements[0].bbox, [20, 30, 100, 35]);
+  assert.equal(result.payload.ui_elements[0].category, 'button');
+  assert.deepEqual(result.payload.ui_elements[1].bbox, [200, 30, 32, 32]);
+  assert.equal(result.payload.ui_elements[1].category, 'icon');
+});
+
+test('Ticket 01 (C1): Separates UI-vision regions from privacy/redaction regions (assert no source:vision reaches redactCanvas, outbound payload ui_elements preserved unredacted)', async () => {
+  const canvas = createMockCanvas(400, 400);
+
+  // DOM skeleton contains a sensitive password field
+  const domSkeleton = {
+    tag: 'div',
+    children: [
+      {
+        tag: 'input',
+        id: 'secret-field',
+        type: 'password',
+        value: 'Pass1234',
+        bbox: [20, 20, 150, 40]
+      }
+    ]
+  };
+
+  // UI vision detections (button and search input)
+  const fixtureUIElements = [
+    { bbox: [200, 20, 80, 40], label: 'button', confidence: 0.95 },
+    { bbox: [50, 100, 200, 35], label: 'input', confidence: 0.90 }
+  ];
+
+  let redactCanvasReceivedRegions = null;
+  const mockRedactCanvas = (c, regions, opts) => {
+    redactCanvasReceivedRegions = regions;
+    return 'data:image/png;base64,different_redacted_canvas_data_url_hash_123';
+  };
+
+  const result = await executePipeline({
+    task: 'Ticket 01 separation verification',
+    canvas,
+    domSkeleton,
+    uiRegions: fixtureUIElements,
+    enableFaceDetection: false,
+    enableOcrDetection: false,
+    redactCanvas: mockRedactCanvas,
+    sendToServer: false
+  });
+
+  assert.equal(result.success, true);
+
+  // 1. Assert redactCanvas received ONLY privacy regions and NO source:'vision'
+  assert.ok(redactCanvasReceivedRegions, 'redactCanvas must be called');
+  assert.equal(redactCanvasReceivedRegions.length, 1, 'Only the DOM password should reach redactCanvas');
+  assert.equal(redactCanvasReceivedRegions[0].category, 'password');
+  assert.equal(redactCanvasReceivedRegions[0].source, 'dom');
+  for (const r of redactCanvasReceivedRegions) {
+    assert.notEqual(r.source, 'vision');
+    assert.equal(r.source.includes('vision'), false);
+    assert.notEqual(r.category, 'button');
+  }
+
+  // 2. Assert redaction_map in outbound payload contains zero items with source:'vision'
+  const outboundRedactionMap = result.payload.redaction_map;
+  assert.equal(outboundRedactionMap.length, 1);
+  assert.equal(outboundRedactionMap[0].category, 'password');
+  assert.equal(
+    outboundRedactionMap.filter(r => r.source === 'vision' || r.source.includes('vision')).length,
+    0,
+    'redaction_map must contain 0 vision items'
+  );
+
+  // 3. Assert ui_elements in outbound payload contains the normalized vision detections, unredacted
+  const outboundUIElements = result.payload.ui_elements;
+  assert.ok(Array.isArray(outboundUIElements), 'ui_elements must be an array');
+  assert.equal(outboundUIElements.length, 2);
+  assert.deepEqual(outboundUIElements[0].bbox, [200, 20, 80, 40]);
+  assert.equal(outboundUIElements[0].category, 'button');
+  assert.equal(outboundUIElements[0].label, 'button');
+  assert.equal(outboundUIElements[0].source, 'vision');
+
+  assert.deepEqual(outboundUIElements[1].bbox, [50, 100, 200, 35]);
+  assert.equal(outboundUIElements[1].category, 'input');
+  assert.equal(outboundUIElements[1].label, 'input');
+  assert.equal(outboundUIElements[1].source, 'vision');
+
+  // 4. Assert assertPayloadSanitized throws if a vision region is artificially inserted into redaction_map
+  assert.throws(
+    () => {
+      assertPayloadSanitized({
+        ...result.payload,
+        redaction_map: [{ bbox: [0, 0, 10, 10], category: 'button', source: 'vision' }]
+      });
+    },
+    /SecurityError/,
+    'assertPayloadSanitized must reject any payload with vision items in redaction_map'
+  );
+});
+
+test('Ticket 02 (C2): executePipeline runs vision inference by default without options and populates 3 telemetry fields', async () => {
+  const canvas = createMockCanvas(300, 200);
+  const domSkeleton = { tag: 'div', children: [{ tag: 'p', text: 'Hello World' }] };
+
+  // Call executePipeline completely without any vision-related options
+  const result = await executePipeline({
+    task: 'Default vision inference test',
+    canvas,
+    domSkeleton,
+    sendToServer: false
+  });
+
+  assert.equal(result.success, true);
+
+  // 1. Verify top-level telemetry fields
+  assert.equal(typeof result.vision_backend, 'string', 'vision_backend must be a string');
+  assert.ok(result.vision_backend.length > 0, 'vision_backend must not be empty');
+  assert.ok(['wasm', 'webgpu'].includes(result.vision_backend), `vision_backend should be wasm or webgpu, got ${result.vision_backend}`);
+
+  assert.equal(typeof result.vision_detect_ms, 'number', 'vision_detect_ms must be a number');
+  assert.ok(result.vision_detect_ms >= 0, 'vision_detect_ms must be non-negative');
+
+  assert.equal(typeof result.vision_element_count, 'number', 'vision_element_count must be a number');
+  assert.ok(result.vision_element_count >= 0, 'vision_element_count must be non-negative');
+
+  // 2. Verify timings contains the same telemetry fields
+  assert.equal(result.timings.vision_backend, result.vision_backend);
+  assert.equal(result.timings.vision_detect_ms, result.vision_detect_ms);
+  assert.equal(result.timings.vision_element_count, result.vision_element_count);
+
+  // 3. Verify telemetry object contains the same fields
+  assert.ok(result.telemetry, 'telemetry object must exist');
+  assert.equal(result.telemetry.vision_backend, result.vision_backend);
+  assert.equal(result.telemetry.vision_detect_ms, result.vision_detect_ms);
+  assert.equal(result.telemetry.vision_element_count, result.vision_element_count);
+});
+
+test('Ticket 02 (C2): executePipeline without enableVisionInference option invokes mock runVisionInference by default', async () => {
+  let mockCalls = 0;
+  const mockVisionInference = async (canvas, options) => {
+    mockCalls++;
+    return [
+      { bbox: [10, 20, 80, 40], label: 'button', confidence: 0.95 },
+      { bbox: [100, 20, 150, 35], label: 'input', confidence: 0.88 }
+    ];
+  };
+
+  const canvas = createMockCanvas(320, 240);
+  const domSkeleton = { tag: 'div', children: [] };
+
+  // Call without passing enableVisionInference
+  const result = await executePipeline({
+    task: 'Mock vision default invocation test',
+    canvas,
+    domSkeleton,
+    runVisionInference: mockVisionInference,
+    sendToServer: false
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(mockCalls, 1, 'Mock runVisionInference must be invoked by default');
+  assert.equal(result.uiElements.length, 2);
+  assert.equal(result.vision_element_count, 2);
+  assert.equal(result.vision_backend, 'mock');
+  assert.equal(typeof result.vision_detect_ms, 'number');
+  assert.equal(result.timings.vision_element_count, 2);
+  assert.equal(result.timings.vision_backend, 'mock');
+});
+
+test('Ticket 02 (C2): executePipeline with explicit enableVisionInference: false skips vision inference', async () => {
+  let mockCalls = 0;
+  const mockVisionInference = async () => {
+    mockCalls++;
+    return [{ bbox: [10, 20, 80, 40], label: 'button', confidence: 0.95 }];
+  };
+
+  const canvas = createMockCanvas(300, 200);
+  const domSkeleton = { tag: 'div', children: [] };
+
+  const result = await executePipeline({
+    task: 'Opt-out test',
+    canvas,
+    domSkeleton,
+    enableVisionInference: false,
+    runVisionInference: mockVisionInference,
+    sendToServer: false
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(mockCalls, 0, 'runVisionInference must NOT be called when enableVisionInference: false');
+  assert.equal(result.uiElements.length, 0);
+  assert.equal(result.vision_element_count, 0);
+  assert.equal(result.vision_backend, 'none');
+  assert.equal(result.timings.vision_element_count, 0);
+  assert.equal(result.timings.vision_backend, 'none');
+});
+
+test('Ticket 02 (C2): executePipeline skips vision inference when isRuntimeSupported is false', async () => {
+  let mockCalls = 0;
+  const mockVisionInference = async () => {
+    mockCalls++;
+    return [{ bbox: [10, 20, 80, 40], label: 'button', confidence: 0.95 }];
+  };
+
+  const canvas = createMockCanvas(300, 200);
+  const domSkeleton = { tag: 'div', children: [] };
+
+  const result = await executePipeline({
+    task: 'Unsupported runtime test',
+    canvas,
+    domSkeleton,
+    isRuntimeSupported: false,
+    runVisionInference: mockVisionInference,
+    sendToServer: false
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(mockCalls, 0, 'runVisionInference must NOT be called when runtime is unsupported');
+  assert.equal(result.uiElements.length, 0);
+  assert.equal(result.vision_element_count, 0);
+  assert.equal(result.vision_backend, 'none');
+});
+
+test('Ticket 02 (C2): captureAndSendPlan in background.js does not override enableVisionInference to false', async () => {
+  let mockCalls = 0;
+  const mockVisionInference = async () => {
+    mockCalls++;
+    return [{ bbox: [25, 30, 90, 35], label: 'button', confidence: 0.92 }];
+  };
+
+  const mockCanvas = createMockCanvas(320, 240);
+  const originalChrome = globalThis.chrome;
+  globalThis.chrome = {
+    tabs: {
+      query: async () => [{ id: 101, active: true }]
+    }
+  };
+
+  try {
+    const res = await captureAndSendPlan({
+      task: 'Background plan without explicit vision option',
+      canvas: mockCanvas,
+      domSkeleton: { tag: 'div', children: [] },
+      sendToServer: false,
+      runVisionInference: mockVisionInference
+    });
+
+    assert.equal(res.success, true);
+    assert.equal(mockCalls, 1, 'captureAndSendPlan must not disable vision inference');
+    assert.equal(res.vision_element_count, 1);
+    assert.equal(typeof res.vision_backend, 'string');
+    assert.equal(typeof res.vision_detect_ms, 'number');
+    assert.equal(res.timings.vision_element_count, 1);
+    assert.equal(res.timings.vision_backend, res.vision_backend);
+  } finally {
+    globalThis.chrome = originalChrome;
+  }
 });
 
 

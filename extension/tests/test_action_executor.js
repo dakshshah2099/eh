@@ -13,8 +13,15 @@ import {
   executeType,
   executeFillSecret,
   isSensitiveField,
+  validateNavigationUrl,
+  executeNavigate,
   executeAction,
-  executeActions
+  executeActions,
+  classifyActionRisk,
+  enforceConfirmationGate,
+  ConfirmationRequired,
+  ConfirmationDeclined,
+  ALLOWED_ACTION_TYPES
 } from '../src/action_executor.js';
 
 
@@ -509,4 +516,298 @@ test('Ticket 09 / B9: Capability-based secret autofill executes without leaking 
     globalThis.window = origWin;
   }
 });
+
+test('Ticket 04 / C4: validateNavigationUrl enforces strict scheme allowlist and blocks dangerous schemes', () => {
+  // 1. Valid http and https URLs pass
+  const validHttp = validateNavigationUrl('http://example.com');
+  assert.strictEqual(validHttp.valid, true);
+  assert.strictEqual(validHttp.url, 'http://example.com/');
+
+  const validHttps = validateNavigationUrl('https://example.com/checkout?step=2#summary');
+  assert.strictEqual(validHttps.valid, true);
+  assert.strictEqual(validHttps.url, 'https://example.com/checkout?step=2#summary');
+
+  const validWithPort = validateNavigationUrl('http://127.0.0.1:8000/api/plan');
+  assert.strictEqual(validWithPort.valid, true);
+
+  // 2. Forbidden schemes are strictly rejected
+  const forbiddenSchemes = [
+    'javascript:alert(1)',
+    'JAVASCRIPT:alert(document.cookie)',
+    'javascript:void(0);',
+    'data:text/html,<script>alert(1)</script>',
+    'DATA:text/plain;base64,SGVsbG8=',
+    'file:///etc/passwd',
+    'FILE:///C:/secret_credentials.txt',
+    'chrome://settings',
+    'CHROME://version',
+    'chrome-extension://abcdefghijklm/manifest.json',
+    'chrome-extension://xyz/options.html'
+  ];
+
+  for (const url of forbiddenSchemes) {
+    const res = validateNavigationUrl(url);
+    assert.strictEqual(res.valid, false, `Expected forbidden scheme to be rejected: ${url}`);
+    assert.match(res.error, /Forbidden URL scheme/i, `Expected forbidden error message for: ${url}`);
+  }
+
+  // 3. Other unsupported non-http(s) schemes are rejected
+  const otherSchemes = [
+    'ftp://files.example.com/dump.zip',
+    'about:blank',
+    'blob:https://example.com/guid',
+    'ssh://root@example.com'
+  ];
+  for (const url of otherSchemes) {
+    const res = validateNavigationUrl(url);
+    assert.strictEqual(res.valid, false, `Expected non-http scheme to be rejected: ${url}`);
+    assert.match(res.error, /Unsupported URL scheme/i);
+  }
+
+  // 4. Malformed, non-string, or empty URLs are rejected
+  assert.strictEqual(validateNavigationUrl('').valid, false);
+  assert.strictEqual(validateNavigationUrl('   ').valid, false);
+  assert.strictEqual(validateNavigationUrl(null).valid, false);
+  assert.strictEqual(validateNavigationUrl(undefined).valid, false);
+  assert.strictEqual(validateNavigationUrl(12345).valid, false);
+  assert.strictEqual(validateNavigationUrl('not_a_valid_url').valid, false);
+});
+
+test('Ticket 04 / C4: validateAction rejects navigate action with forbidden schemes before execution', () => {
+  // Missing or non-string url
+  assert.strictEqual(validateAction({ type: 'navigate' }).valid, false);
+  assert.strictEqual(validateAction({ type: 'navigate', url: '' }).valid, false);
+  assert.strictEqual(validateAction({ type: 'navigate', url: null }).valid, false);
+
+  // Forbidden schemes rejected at validation time
+  const forbiddenUrls = [
+    'javascript:alert("pwned")',
+    'data:text/html,<h1>XSS</h1>',
+    'file:///C:/Windows/System32/drivers/etc/hosts',
+    'chrome://extensions',
+    'chrome-extension://bad/script.js'
+  ];
+
+  for (const badUrl of forbiddenUrls) {
+    const result = validateAction({ type: 'navigate', url: badUrl });
+    assert.strictEqual(result.valid, false, `validateAction should reject forbidden scheme: ${badUrl}`);
+    assert.match(result.error, /Forbidden URL scheme/i);
+  }
+
+  // Valid URLs pass validation
+  assert.strictEqual(validateAction({ type: 'navigate', url: 'https://example.com/login' }).valid, true);
+  assert.strictEqual(validateAction({ type: 'navigate', target_url: 'http://example.com/catalog' }).valid, true);
+});
+
+test('Ticket 04 / C4: executeAction & executeNavigate dispatch valid URLs and invoke chrome.tabs.update or window.location', async () => {
+  const origChrome = globalThis.chrome;
+  const origWin = globalThis.window;
+
+  try {
+    // 1. Extension environment: chrome.tabs.update is invoked
+    let updatedTabId = null;
+    let updateOpts = null;
+    globalThis.chrome = {
+      tabs: {
+        async update(arg1, arg2) {
+          if (arg2 !== undefined) {
+            updatedTabId = arg1;
+            updateOpts = arg2;
+          } else {
+            updatedTabId = null;
+            updateOpts = arg1;
+          }
+          return { id: updatedTabId || 1, url: updateOpts.url };
+        }
+      }
+    };
+
+    const actionRes = await executeAction({
+      type: 'navigate',
+      url: 'https://github.com/login'
+    });
+    assert.strictEqual(actionRes.success, true);
+    assert.strictEqual(actionRes.action, 'navigate');
+    assert.strictEqual(actionRes.url, 'https://github.com/login');
+    assert.strictEqual(actionRes.navigated, true);
+    assert.deepStrictEqual(updateOpts, { url: 'https://github.com/login' });
+
+    // With explicit tabId
+    const tabRes = await executeAction({
+      type: 'navigate',
+      target_url: 'https://google.com',
+      tabId: 42
+    });
+    assert.strictEqual(tabRes.success, true);
+    assert.strictEqual(updatedTabId, 42);
+    assert.deepStrictEqual(updateOpts, { url: 'https://google.com/' });
+
+    // 2. DOM environment: window.location.assign fallback when chrome.tabs is absent
+    delete globalThis.chrome;
+    let assignedLocation = null;
+    globalThis.window = {
+      location: {
+        assign(u) { assignedLocation = u; }
+      }
+    };
+
+    const winRes = await executeNavigate({ url: 'https://news.ycombinator.com' });
+    assert.strictEqual(winRes.success, true);
+    assert.strictEqual(winRes.navigated, true);
+    assert.strictEqual(assignedLocation, 'https://news.ycombinator.com/');
+
+    // 3. Centralized scheme validation stops forbidden scheme execution even if called directly
+    await assert.rejects(
+      async () => await executeNavigate({ url: 'javascript:alert(1)' }),
+      /Forbidden URL scheme/
+    );
+
+    // 4. executeAction rejects forbidden scheme before execution
+    await assert.rejects(
+      async () => await executeAction({ type: 'navigate', url: 'file:///etc/shadow' }),
+      /Forbidden URL scheme/
+    );
+  } finally {
+    globalThis.chrome = origChrome;
+    globalThis.window = origWin;
+  }
+});
+
+test('Ticket 07 / C7: classifyActionRisk returns {risk, requires_confirmation} and mutates action', () => {
+  // Low risk
+  const scrollAct = { type: 'scroll', deltaY: 100 };
+  const scrollRisk = classifyActionRisk(scrollAct);
+  assert.strictEqual(scrollRisk.risk, 'low');
+  assert.strictEqual(scrollRisk.requires_confirmation, false);
+  assert.strictEqual(scrollAct.risk, 'low');
+  assert.strictEqual(scrollAct.requires_confirmation, false);
+
+  // Medium risk
+  const typeAct = { type: 'type', target_selector: '#search', text: 'query' };
+  const typeRisk = classifyActionRisk(typeAct);
+  assert.strictEqual(typeRisk.risk, 'medium');
+  assert.strictEqual(typeRisk.requires_confirmation, false);
+  assert.strictEqual(typeAct.risk, 'medium');
+
+  // High risk
+  const payAct = { type: 'click', target_selector: '#submit-payment' };
+  const payRisk = classifyActionRisk(payAct);
+  assert.strictEqual(payRisk.risk, 'high');
+  assert.strictEqual(payRisk.requires_confirmation, true);
+  assert.strictEqual(payAct.risk, 'high');
+  assert.strictEqual(payAct.requires_confirmation, true);
+});
+
+test('Ticket 07 / C7: High-risk actions without a confirmation callback throw a ConfirmationRequired error', async () => {
+  const highRiskAction = {
+    type: 'click',
+    target_selector: '#submit-payment',
+    reason: 'Submit Payment'
+  };
+
+  // High-risk click without onConfirmAction callback throws ConfirmationRequired before executeAction runs
+  await assert.rejects(
+    async () => await executeAction(highRiskAction),
+    (err) => {
+      assert.ok(err instanceof ConfirmationRequired);
+      assert.strictEqual(err.name, 'ConfirmationRequired');
+      return true;
+    }
+  );
+
+  // Low-risk action passes through without confirmation
+  const scrollRes = await executeAction({ type: 'scroll', deltaY: 30 });
+  assert.strictEqual(scrollRes.success, true);
+  assert.strictEqual(scrollRes.action, 'scroll');
+});
+
+test('Ticket 07 / C7: A test fixture simulating a "Submit Payment" click action is blocked pending confirmation', async () => {
+  const payBtn = createMockElement({
+    tagName: 'button',
+    id: 'submit-payment-btn',
+    rect: { left: 10, top: 10, width: 80, height: 40 }
+  });
+  payBtn.innerText = 'Submit Payment';
+
+  const origDoc = globalThis.document;
+  globalThis.document = {
+    querySelector(sel) {
+      if (sel === '#submit-payment-btn' || sel === '.btn-pay') return payBtn;
+      return null;
+    },
+    elementFromPoint() { return payBtn; }
+  };
+
+  try {
+    const paymentAction = {
+      type: 'click',
+      target_selector: '#submit-payment-btn',
+      reason: 'Submit Payment for invoice'
+    };
+
+    // 1. Blocked when no confirmation callback
+    await assert.rejects(
+      async () => await executeAction(paymentAction),
+      (err) => {
+        assert.ok(err instanceof ConfirmationRequired);
+        return true;
+      }
+    );
+
+    // 2. Blocked when user declines confirmation
+    await assert.rejects(
+      async () => await executeAction(paymentAction, {
+        onConfirmAction: async () => false
+      }),
+      (err) => {
+        assert.ok(err instanceof ConfirmationDeclined);
+        assert.ok(err instanceof ConfirmationRequired);
+        return true;
+      }
+    );
+
+    // 3. Executes successfully when confirmed
+    let callbackReceived = null;
+    const res = await executeAction(paymentAction, {
+      onConfirmAction: async (act) => {
+        callbackReceived = act;
+        return true;
+      }
+    });
+
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(res.action, 'click');
+    assert.strictEqual(callbackReceived.risk, 'high');
+    assert.strictEqual(callbackReceived.requires_confirmation, true);
+    assert.strictEqual(paymentAction.confirmed, true);
+  } finally {
+    globalThis.document = origDoc;
+  }
+});
+
+test('Ticket 08 / C8: action_executor uses centralized action_schema.js and re-exports ALLOWED_ACTION_TYPES', () => {
+  assert.ok(ALLOWED_ACTION_TYPES instanceof Set);
+  assert.strictEqual(ALLOWED_ACTION_TYPES.has('click'), true);
+  assert.strictEqual(ALLOWED_ACTION_TYPES.has('type'), true);
+  assert.strictEqual(ALLOWED_ACTION_TYPES.has('scroll'), true);
+  assert.strictEqual(ALLOWED_ACTION_TYPES.has('wait'), true);
+  assert.strictEqual(ALLOWED_ACTION_TYPES.has('navigate'), true);
+  assert.strictEqual(ALLOWED_ACTION_TYPES.has('fill_secret'), true);
+  assert.strictEqual(ALLOWED_ACTION_TYPES.has('done'), true);
+  assert.strictEqual(typeof validateAction, 'function');
+  assert.strictEqual(typeof validateNavigationUrl, 'function');
+});
+
+test('Ticket 01: executeAction handles done action cleanly', async () => {
+  const result = await executeAction({
+    type: 'done',
+    reason: 'Checkout process completed successfully'
+  });
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.action, 'done');
+  assert.strictEqual(result.reason, 'Checkout process completed successfully');
+});
+
+
+
 
