@@ -1029,7 +1029,7 @@ def generate_plan(
                     prompt=prompt,
                     image_base64=image_base64,
                     system_prompt=SYSTEM_PROMPT,
-                    max_new_tokens=512
+                    max_new_tokens=160
                 )
             except Exception as smol_err:
                 logger.warning(f"[SmolVLM] Local inference error ({smol_err}), using fallback planner.")

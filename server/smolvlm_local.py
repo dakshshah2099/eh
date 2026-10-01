@@ -101,6 +101,9 @@ def call_smolvlm(
     model, processor = load_smolvlm()
     device = next(model.parameters()).device
 
+    if hasattr(processor, "image_processor") and hasattr(processor.image_processor, "do_image_splitting"):
+        processor.image_processor.do_image_splitting = False
+
     pil_img = decode_image(image_base64)
     full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
 
@@ -120,7 +123,10 @@ def call_smolvlm(
         inputs = processor(text=text_prompt, return_tensors="pt")
 
     inputs = {k: v.to(device) for k, v in inputs.items()}
+    input_len = inputs["input_ids"].shape[1]
+    logger.info(f"[SmolVLM] Starting generation (input tokens: {input_len}, max_new_tokens: {max_new_tokens})...")
 
+    t_start = time.time()
     with torch.no_grad():
         output_ids = model.generate(
             **inputs,
@@ -128,8 +134,8 @@ def call_smolvlm(
             do_sample=False
         )
 
-    # Slice out generated tokens (ignoring input tokens)
-    input_len = inputs["input_ids"].shape[1]
+    dur = time.time() - t_start
     generated_tokens = output_ids[0][input_len:]
+    logger.info(f"[SmolVLM] Generated {len(generated_tokens)} tokens in {dur:.2f}s ({len(generated_tokens)/max(dur, 0.001):.1f} tok/s).")
     response_text = processor.decode(generated_tokens, skip_special_tokens=True).strip()
     return response_text
