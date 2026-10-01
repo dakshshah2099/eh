@@ -184,9 +184,8 @@ Output MUST be a single valid JSON object strictly matching this schema:
 CRITICAL RULES:
 - Never output placeholder strings like "#element-id", "element-id", or "short explanation".
 - For targets, provide the REAL element id or CSS selector from the page (or provide reason describing what to click/type).
-
-CRITICAL RULES:
-- If the task requires an interaction (e.g. "play ...", "search ...", "click ...", "type ..."), you MUST emit a "click" or "type" action targeting the appropriate element. Do NOT emit "done" on initial steps before taking an action.
+- If the task requires an interaction (e.g. "play ...", "search ...", "click ...", "type ...", "find ..."), you MUST emit a "click" or "type" action targeting the appropriate element.
+- NEVER emit "done" to report that content is redacted, hidden, or inaccessible. Redaction is deliberate privacy protection. If items are masked or not visible, use the search input (e.g. type keywords) or click navigation controls to proceed.
 - Return ONLY the single immediate next action in the "actions" array.
 - Do NOT output placeholder text like "string or null" or "[x, y, w, h]". Use actual selectors (e.g. '#play-btn', 'input[name="search"]') or bounding boxes from detected elements.
 - For click/type targets, prefer detected element IDs or CSS selectors matching buttons/inputs.
@@ -299,7 +298,7 @@ def compact_dom(node: Any, depth: int = 0, max_depth: int = 5) -> Any:
     is_interactive = tag in interactive_tags or bool(role) or bool(node.get("onclick")) or bool(node.get("href"))
 
     compact: Dict[str, Any] = {"tag": tag} if tag else {}
-    for k in ("id", "name", "type", "role", "selector", "placeholder"):
+    for k in ("id", "name", "type", "role", "selector", "placeholder", "ariaLabel", "aria-label", "title"):
         val = node.get(k)
         if val:
             compact[k] = val
@@ -763,13 +762,15 @@ def enrich_plan_actions(
     is_actionable = any(kw in task_lower for kw in action_keywords)
     has_done_action = any(a.type == "done" for a in plan_resp.actions)
 
-    # Prevent premature done on step 1
-    if (is_actionable and step == 1 and (has_done_action or plan_resp.task_complete or len(plan_resp.actions) == 0)):
+    # Prevent premature done: on step 1 or if model gives up citing redaction/inaccessibility
+    done_reasons = " ".join([str(a.reason or "").lower() for a in plan_resp.actions if a.type == "done"])
+    is_negative_done = any(neg in done_reasons for neg in ("cannot", "unable", "inaccessible", "could not", "not found", "redacted", "hidden", "no exposed"))
+    if is_actionable and (step == 1 or is_negative_done) and (has_done_action or plan_resp.task_complete or len(plan_resp.actions) == 0):
         matched = match_target_from_context(task, ui_elements, dom_skeleton)
         if matched:
             act_type = matched.get("action_type", "click")
-            type_text = " ".join([w for w in re.split(r"\W+", task) if len(w) > 2 and w.lower() not in ("play", "click", "open", "watch", "listen", "find")]) if act_type == "type" else None
-            logger.info(f"[Planner] Overriding premature 'done' on step {step} with action matching task '{task}'")
+            type_text = " ".join([w for w in re.split(r"\W+", task) if len(w) > 1 and w.lower() not in ("play", "click", "open", "watch", "listen", "find", "search", "get", "my")]) if act_type == "type" else None
+            logger.info(f"[Planner] Overriding premature/negative 'done' on step {step} with action matching task '{task}'")
             plan_resp.actions = [
                 ActionItem(
                     type=act_type,
