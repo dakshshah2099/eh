@@ -97,6 +97,8 @@ def normalize_bbox(val: Any) -> Optional[List[float]]:
                 out.append(float(x))
             except (ValueError, TypeError):
                 continue
+        if len(out) >= 2 and (out[0] < -100 or out[1] < -100):
+            return None
         if len(out) >= 4:
             return out[:4]
         elif len(out) == 2:
@@ -603,6 +605,15 @@ def parse_vlm_response(raw_text: str) -> PlanResponse:
     return plan_resp
 
 
+def is_valid_bbox(b: Any) -> bool:
+    if not isinstance(b, (list, tuple)) or len(b) < 4:
+        return False
+    x, y, w, h = b[0], b[1], b[2], b[3]
+    if x < -500 or y < -500 or w <= 0 or h <= 0:
+        return False
+    return True
+
+
 def match_target_from_context(
     query: str,
     ui_elements: Optional[List[Any]] = None,
@@ -626,11 +637,14 @@ def match_target_from_context(
             for elem in ui_elements:
                 if not isinstance(elem, dict):
                     continue
+                bbox = elem.get("bbox")
+                if bbox and not is_valid_bbox(bbox):
+                    continue
                 label = str(elem.get("label") or elem.get("text") or "").lower()
                 elem_id = str(elem.get("element_id") or elem.get("id") or "").lower()
                 if any(w in label or w in elem_id for w in subject_words):
                     return {
-                        "bbox": elem.get("bbox"),
+                        "bbox": bbox,
                         "element_id": elem.get("element_id") or elem.get("id"),
                         "selector": f"#{elem.get('element_id') or elem.get('id')}" if (elem.get("element_id") or elem.get("id")) else None,
                         "action_type": "click",
@@ -638,11 +652,14 @@ def match_target_from_context(
         for elem in ui_elements:
             if not isinstance(elem, dict):
                 continue
+            bbox = elem.get("bbox")
+            if bbox and not is_valid_bbox(bbox):
+                continue
             label = str(elem.get("label") or elem.get("text") or "").lower()
             elem_id = str(elem.get("element_id") or elem.get("id") or "").lower()
             if any(w in label or w in elem_id for w in words):
                 return {
-                    "bbox": elem.get("bbox"),
+                    "bbox": bbox,
                     "element_id": elem.get("element_id") or elem.get("id"),
                     "selector": f"#{elem.get('element_id') or elem.get('id')}" if (elem.get("element_id") or elem.get("id")) else None,
                     "action_type": "click",
@@ -656,6 +673,9 @@ def match_target_from_context(
                 if res:
                     return res
         elif isinstance(node, dict):
+            bbox = node.get("bbox")
+            if bbox and not is_valid_bbox(bbox):
+                return None
             text = str(node.get("text") or node.get("innerText") or node.get("value") or "").lower()
             elem_id = str(node.get("id") or "").lower()
             name = str(node.get("name") or "").lower()
@@ -669,7 +689,7 @@ def match_target_from_context(
                 return {
                     "selector": sel,
                     "element_id": node.get("id"),
-                    "bbox": node.get("bbox"),
+                    "bbox": bbox,
                     "action_type": act_type,
                 }
             for child in node.get("children", []):
@@ -695,18 +715,29 @@ def match_target_from_context(
                 if r:
                     return r
         elif isinstance(node, dict):
+            bbox = node.get("bbox")
+            if bbox and not is_valid_bbox(bbox):
+                bbox = None
             tag = str(node.get("tag") or node.get("tagName") or "").lower()
             elem_id = str(node.get("id") or "").lower()
             name = str(node.get("name") or "").lower()
-            placeholder = str(node.get("placeholder") or "").lower()
-            if tag in ("input", "textarea") and (
-                "search" in elem_id or "search" in name or "search" in placeholder or node.get("type") == "search"
-            ):
-                sel = node.get("selector") or (f"#{node.get('id')}" if node.get("id") else None) or "input[type='search'], input[name*='search']"
+            aria = str(node.get("aria-label") or node.get("ariaLabel") or "").lower()
+            title = str(node.get("title") or "").lower()
+            is_search = (
+                "search" in elem_id
+                or "search" in name
+                or "search" in placeholder
+                or "search" in aria
+                or "search" in title
+                or node.get("type") == "search"
+                or name in ("q", "query")
+            )
+            if tag in ("input", "textarea") and is_search:
+                sel = node.get("selector") or (f"#{node.get('id')}" if node.get("id") else None) or "input[name='q'], input[type='search'], input[aria-label*='Search' i]"
                 return {
                     "selector": sel,
                     "element_id": node.get("id"),
-                    "bbox": node.get("bbox"),
+                    "bbox": bbox,
                     "action_type": "type",
                 }
             for child in node.get("children", []):
@@ -761,10 +792,16 @@ def enrich_plan_actions(
         if action.target_selector and action.target_selector.strip().lower() in PLACEHOLDER_SELECTORS:
             action.target_selector = None
 
+        # If target_bbox is invalid/offscreen, drop it so it does not send the click off-screen
+        if action.target_bbox and not is_valid_bbox(action.target_bbox):
+            action.target_bbox = None
+
         if action.type in ("click", "type", "hover", "press", "fill_secret"):
             has_target = bool(action.target_selector or action.target_bbox or action.target_element_id)
             if not has_target:
-                query = action.reason or action.text or task
+                # If reason is generic like 'unauthorized' or short, prioritize full user task
+                is_generic_reason = not action.reason or len(action.reason.split()) <= 2 or action.reason.lower() in ("unauthorized", "click", "find", "search")
+                query = task if is_generic_reason else (action.reason or action.text or task)
                 matched = match_target_from_context(query, ui_elements, dom_skeleton)
                 if matched:
                     if matched.get("bbox") and not action.target_bbox:
@@ -776,8 +813,8 @@ def enrich_plan_actions(
                     if matched.get("action_type") and action.type == "click" and matched["action_type"] == "type":
                         action.type = "type"
                         if not action.text:
-                            # Extract search words from task (e.g. "Too Sweet" from "Play Too Sweet")
-                            action.text = " ".join([w for w in re.split(r"\W+", task) if len(w) > 1 and w.lower() not in ("play", "click", "open", "watch", "listen", "find", "search")])
+                            # Extract search words from task (e.g. "SIH Team Leader Login Credentials Mail" from "Find my SIH Team Leader Login Credentials Mail")
+                            action.text = " ".join([w for w in re.split(r"\W+", task) if len(w) > 1 and w.lower() not in ("play", "click", "open", "watch", "listen", "find", "search", "get", "my")])
             elif action.target_selector and not action.target_bbox and not action.target_element_id:
                 sel = str(action.target_selector).strip()
                 if " " in sel and not any(combinator in sel for combinator in (">", "+", "~", "[", "#", ".")):

@@ -304,6 +304,18 @@ export function resolveTarget(target, options = {}) {
   const doc = typeof document !== 'undefined' ? document : null;
   if (!doc) return null;
 
+  const isVisibleTarget = (el) => {
+    if (!el) return false;
+    if (typeof el.getBoundingClientRect === 'function') {
+      try {
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 && r.height <= 0) return false;
+        if (r.left < -500 || r.top < -500) return false;
+      } catch (_) {}
+    }
+    return true;
+  };
+
   // 1. Try element_id / target_element_id first (ticket 06 - primary target)
   const elementId = target.target_element_id || target.element_id || target.id;
   if (elementId && typeof elementId === 'string') {
@@ -312,12 +324,12 @@ export function resolveTarget(target, options = {}) {
     try {
       if (typeof doc.getElementById === 'function') {
         const el = doc.getElementById(cleanId);
-        if (el) return el;
+        if (el && isVisibleTarget(el)) return el;
       }
       if (typeof doc.querySelector === 'function') {
         const sanitized = cleanId.replace(/["'\\]/g, '');
         const el = doc.querySelector(`[data-element-id="${sanitized}"], [id="${sanitized}"]`);
-        if (el) return el;
+        if (el && isVisibleTarget(el)) return el;
       }
     } catch (_) {}
   }
