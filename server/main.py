@@ -448,8 +448,8 @@ def plan(
 
     # 4. Provider credential security check
     server_vlm_key = os.getenv("VLM_API_KEY") or os.getenv("OPENAI_API_KEY", "")
-    effective_api_key = payload.api_key
-    if payload.api_key:
+    effective_api_key = payload.__dict__.get("api_key")
+    if effective_api_key:
         if server_vlm_key:
             logger.warning(
                 "Client supplied PlanRequest.api_key, but server-side "
