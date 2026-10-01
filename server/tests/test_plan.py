@@ -1134,3 +1134,21 @@ def test_premature_done_override_on_step_1():
     assert len(enriched.actions) == 1
     assert enriched.actions[0].type == "click"
     assert enriched.actions[0].target_element_id == "video-item-1"
+
+
+def test_parse_vlm_response_repairs_pseudo_schema_and_truncation():
+    """Verify that parse_vlm_response handles pseudo-syntax schema echoes and truncation cleanly."""
+    raw_truncated_pseudo = """{
+  "actions": [
+    {
+      "type": "click",
+      "target_selector": "string or null",
+      "target_bbox": [x, y, w, h] or null,
+      "target_element_id": "string or null",
+      "secret_key": "st"""
+    plan = parse_vlm_response(raw_truncated_pseudo)
+    assert len(plan.actions) == 1
+    assert plan.actions[0].type == "click"
+    assert plan.actions[0].target_selector is None
+    assert plan.actions[0].target_bbox is None
+

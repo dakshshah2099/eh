@@ -133,24 +133,23 @@ Output MUST be a single valid JSON object strictly matching this schema:
 {
   "actions": [
     {
-      "type": "click" | "type" | "fill_secret" | "scroll" | "wait" | "navigate" | "done",
-      "target_selector": "string or null",
-      "target_bbox": [x, y, w, h] or null,
-      "target_element_id": "string or null",
-      "secret_key": "string or null",
-      "text": "text to type if type action, else null",
-      "url": "destination http(s) URL if navigate action, else null",
+      "type": "click",
+      "target_selector": "#element-id",
+      "target_bbox": null,
+      "target_element_id": null,
+      "text": null,
+      "url": null,
       "reason": "short explanation"
     }
   ],
-  "task_complete": boolean,
-  "confidence": number between 0.0 and 1.0
+  "task_complete": false,
+  "confidence": 0.95
 }
 
 CRITICAL RULES:
 - If the task requires an interaction (e.g. "play ...", "search ...", "click ...", "type ..."), you MUST emit a "click" or "type" action targeting the appropriate element. Do NOT emit "done" on initial steps before taking an action.
 - Return ONLY the single immediate next action in the "actions" array.
-- Do NOT output placeholder text like "string or null" or "|". Use actual selectors (e.g. '#play-btn', 'input[name="search"]') or bounding boxes from detected elements.
+- Do NOT output placeholder text like "string or null" or "[x, y, w, h]". Use actual selectors (e.g. '#play-btn', 'input[name="search"]') or bounding boxes from detected elements.
 - For click/type targets, prefer detected element IDs or CSS selectors matching buttons/inputs.
 
 TASK COMPLETION RULE:
@@ -395,11 +394,24 @@ def normalize_action_dict(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
-def _repair_and_load_json(text: str) -> Any:
-    cleaned = text.strip()
+def _clean_pseudo_json_tokens(raw: str) -> str:
+    cleaned = raw.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned)
         cleaned = re.sub(r"\n?```$", "", cleaned).strip()
+
+    # Clean pseudo-syntax emitted by small models mimicking schemas
+    cleaned = re.sub(r'\[\s*x\s*,\s*y\s*,\s*w\s*,\s*h\s*\](?:\s*or\s*null)?', 'null', cleaned)
+    cleaned = re.sub(r'"string or null"', 'null', cleaned)
+    cleaned = re.sub(r'"string"\s+or\s+null', 'null', cleaned)
+    cleaned = re.sub(r':\s*[a-zA-Z_]+\s+or\s+null', ': null', cleaned)
+    cleaned = re.sub(r':\s*boolean', ': false', cleaned)
+    cleaned = re.sub(r'"click"\s*\|\s*"[^"]+"[^,\}\]]*', '"click"', cleaned)
+    return cleaned
+
+
+def _repair_and_load_json(text: str) -> Any:
+    cleaned = _clean_pseudo_json_tokens(text)
 
     # 1. Direct parse attempt
     try:
@@ -411,7 +423,7 @@ def _repair_and_load_json(text: str) -> Any:
     code_block = re.search(r"```(?:json)?\s*(\{[\s\S]*?\}|\[[\s\S]*?\])\s*```", cleaned)
     if code_block:
         try:
-            return json.loads(code_block.group(1))
+            return json.loads(_clean_pseudo_json_tokens(code_block.group(1)))
         except Exception:
             pass
 
@@ -446,15 +458,35 @@ def _repair_and_load_json(text: str) -> Any:
     if first_open:
         start_idx = first_open.start()
         partial = cleaned[start_idx:].strip()
+        # If there is an odd number of quotes, remove the dangling unclosed string at the end
+        if partial.count('"') % 2 != 0:
+            partial = re.sub(r'"[^"]*$', '', partial)
+        # Drop incomplete dangling key or key-value pair at the end
+        partial = re.sub(r',?\s*"[a-zA-Z0-9_]*"\s*:\s*[^,\]\}]*$', '', partial)
+        partial = re.sub(r',?\s*"[a-zA-Z0-9_]*"\s*:?\s*$', '', partial)
         # Remove trailing dangling comma or colon
         partial = re.sub(r"[,:\s]+$", "", partial)
-        # Count open braces and brackets
-        open_braces = partial.count("{") - partial.count("}")
-        open_brackets = partial.count("[") - partial.count("]")
-        # Close any dangling quotes
-        if partial.count('"') % 2 != 0:
-            partial += '"'
-        partial = partial + ("]" * max(0, open_brackets)) + ("}" * max(0, open_braces))
+        # Track stack of openers to close in exact reverse nesting order
+        stack = []
+        in_str = False
+        escape = False
+        for ch in partial:
+            if ch == '\\' and not escape:
+                escape = True
+                continue
+            if ch == '"' and not escape:
+                in_str = not in_str
+            elif not in_str:
+                if ch == '{':
+                    stack.append('}')
+                elif ch == '[':
+                    stack.append(']')
+                elif ch in ('}', ']') and stack:
+                    if stack[-1] == ch:
+                        stack.pop()
+            escape = False
+
+        partial += "".join(reversed(stack))
         try:
             return json.loads(partial)
         except Exception:
@@ -952,7 +984,7 @@ def generate_plan(
                     prompt=prompt,
                     image_base64=image_base64,
                     system_prompt=SYSTEM_PROMPT,
-                    max_new_tokens=256
+                    max_new_tokens=512
                 )
             except Exception as smol_err:
                 logger.warning(f"[SmolVLM] Local inference error ({smol_err}), using fallback planner.")
