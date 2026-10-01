@@ -429,6 +429,18 @@ def normalize_action_dict(item: Dict[str, Any]) -> Dict[str, Any]:
         norm["secret_key"] = norm["secretKey"]
     if "url" not in norm and "target_url" in norm:
         norm["url"] = norm["target_url"]
+
+    # If type is still missing, infer it from properties
+    if not norm.get("type"):
+        if norm.get("text"):
+            norm["type"] = "type"
+        elif norm.get("url"):
+            norm["type"] = "navigate"
+        elif norm.get("secret_key"):
+            norm["type"] = "fill_secret"
+        elif norm.get("target_selector") or norm.get("target_bbox") or norm.get("target_element_id"):
+            norm["type"] = "click"
+
     return norm
 
 
@@ -568,13 +580,20 @@ def parse_vlm_response(raw_text: str) -> PlanResponse:
 
         actions = data.get("actions")
         if isinstance(actions, list):
-            data["actions"] = [
-                normalize_action_dict(a) if isinstance(a, dict) else a
-                for a in actions
-            ]
+            valid_actions = []
+            for a in actions:
+                if isinstance(a, dict):
+                    norm_a = normalize_action_dict(a)
+                    # Discard empty dicts or dicts without any action properties
+                    if norm_a.get("type"):
+                        valid_actions.append(norm_a)
+                elif isinstance(a, ActionItem):
+                    valid_actions.append(a)
+            data["actions"] = valid_actions
+
             if any(
                 isinstance(a, dict) and (str(a.get("type", "")).lower() == "done" or str(a.get("action", "")).lower() == "done")
-                for a in actions
+                for a in data["actions"]
             ):
                 data["task_complete"] = True
 

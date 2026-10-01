@@ -1185,3 +1185,29 @@ def test_enrich_plan_actions_caps_speculative_actions():
     assert capped_pair.actions[1].type == "submit"
 
 
+def test_parse_vlm_response_filters_empty_action_dicts():
+    """Verify that empty or incomplete dicts inside actions are filtered out without failing validation."""
+    from vlm_planner import parse_vlm_response
+
+    raw_json = json.dumps({
+        "actions": [
+            {"type": "click", "target_selector": "#first"},
+            {},
+            {"target_selector": "#implicit-click"},
+            {"secret_key": "BANK_PASSWORD"},
+            {},
+        ],
+        "task_complete": False,
+        "confidence": 0.9,
+    })
+    plan = parse_vlm_response(raw_json)
+    assert len(plan.actions) == 3
+    assert plan.actions[0].type == "click"
+    assert plan.actions[0].target_selector == "#first"
+    assert plan.actions[1].type == "click"
+    assert plan.actions[1].target_selector == "#implicit-click"
+    assert plan.actions[2].type == "fill_secret"
+    assert plan.actions[2].secret_key == "BANK_PASSWORD"
+
+
+
