@@ -554,10 +554,14 @@ function getCenterCoordinates(target, options = {}) {
   // Case 3: Downscaled image scale (e.g. scale: 0.4)
   const scale = Number(options.scale || target.scale || options.image?.scale || 0);
   if (scale > 0 && scale < 1.0) {
-    return {
-      x: Math.round(rawX / scale),
-      y: Math.round(rawY / scale)
-    };
+    const maxScaledW = vpWidth * scale * 1.15;
+    const maxScaledH = vpHeight * scale * 1.15;
+    if (rawX <= maxScaledW && rawY <= maxScaledH) {
+      return {
+        x: Math.max(0, Math.min(Math.round(rawX / scale), vpWidth - 1)),
+        y: Math.max(0, Math.min(Math.round(rawY / scale), vpHeight - 1))
+      };
+    }
   }
 
   // Case 4: Image width/height specified (scale to viewport)
@@ -566,13 +570,16 @@ function getCenterCoordinates(target, options = {}) {
   if (imgW > 0 && imgH > 0 && (Math.abs(imgW - vpWidth) > 5 || Math.abs(imgH - vpHeight) > 5)) {
     if (rawX <= imgW + 10 && rawY <= imgH + 10) {
       return {
-        x: Math.round(rawX * (vpWidth / imgW)),
-        y: Math.round(rawY * (vpHeight / imgH))
+        x: Math.max(0, Math.min(Math.round(rawX * (vpWidth / imgW)), vpWidth - 1)),
+        y: Math.max(0, Math.min(Math.round(rawY * (vpHeight / imgH)), vpHeight - 1))
       };
     }
   }
 
-  return { x: Math.round(rawX), y: Math.round(rawY) };
+  return {
+    x: Math.max(0, Math.min(Math.round(rawX), vpWidth - 1)),
+    y: Math.max(0, Math.min(Math.round(rawY), vpHeight - 1))
+  };
 }
 
 /**
@@ -681,7 +688,7 @@ function resolveTarget(target, options = {}) {
 
   // 5. Try finding by element text / label / placeholder / name
   const searchText = (target.text || target.label || target.name || target.placeholder || target.value || selector || '').trim();
-  if (searchText && searchText.length < 100 && !searchText.startsWith('<')) {
+  if (searchText && searchText.length < 100 && !searchText.startsWith('<') && typeof doc.querySelectorAll === 'function') {
     const searchLower = searchText.toLowerCase();
     const candidates = Array.from(doc.querySelectorAll('button, a, input, [role="button"], label, textarea'));
     for (const cand of candidates) {
@@ -704,7 +711,7 @@ function resolveTarget(target, options = {}) {
 
   // 6. Semantic search from task description or action reason if still not found
   const fallbackQuery = (target.reason || options.task || '').toLowerCase();
-  if (fallbackQuery) {
+  if (fallbackQuery && typeof doc.querySelectorAll === 'function') {
     const interactiveCandidates = Array.from(doc.querySelectorAll('button, input[type="submit"], input[type="button"], [role="button"], a'));
     for (const kw of ['submit', 'sign in', 'log in', 'login', 'continue', 'search', 'next', 'save', 'send', 'confirm']) {
       if (fallbackQuery.includes(kw)) {

@@ -808,6 +808,20 @@ test('Ticket 01: executeAction handles done action cleanly', async () => {
   assert.strictEqual(result.reason, 'Checkout process completed successfully');
 });
 
+test('getCenterCoordinates avoids overscaling when coordinates are already in viewport space', () => {
+  const opts = { viewport: { width: 1536, height: 800 }, scale: 0.4 };
+  // Raw coordinate already in viewport space (1536, 800)
+  const coordsViewport = getCenterCoordinates({ target_bbox: [1536, 800, 0, 0] }, opts);
+  assert.strictEqual(coordsViewport.x, 1535); // Clamped to viewport width - 1
+  assert.strictEqual(coordsViewport.y, 799); // Clamped to viewport height - 1
+
+  // Raw coordinate in downscaled space (200, 100 on 0.4 scale)
+  const coordsDownscaled = getCenterCoordinates({ target_bbox: [200, 100, 0, 0] }, opts);
+  assert.strictEqual(coordsDownscaled.x, 500); // 200 / 0.4
+  assert.strictEqual(coordsDownscaled.y, 250); // 100 / 0.4
+});
+
+
 
 
 
