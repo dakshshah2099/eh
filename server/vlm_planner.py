@@ -4,7 +4,7 @@ import os
 import re
 from typing import Any, Dict, List, Literal, Optional
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,34 @@ def get_vlm_timeout() -> float:
     return float(os.getenv("VLM_TIMEOUT_SECONDS", "30.0"))
 
 
+def normalize_bbox(val: Any) -> Optional[List[float]]:
+    if val is None:
+        return None
+    if isinstance(val, dict):
+        try:
+            x = float(val.get("x", val.get("left", 0)))
+            y = float(val.get("y", val.get("top", 0)))
+            w = float(val.get("w", val.get("width", 0)))
+            h = float(val.get("h", val.get("height", 0)))
+            return [x, y, w, h]
+        except (ValueError, TypeError):
+            return None
+    if isinstance(val, (list, tuple)):
+        out = []
+        for x in val:
+            try:
+                out.append(float(x))
+            except (ValueError, TypeError):
+                continue
+        if len(out) >= 4:
+            return out[:4]
+        elif len(out) == 2:
+            return [out[0], out[1], 0.0, 0.0]
+        elif len(out) > 0:
+            return (out + [0.0, 0.0, 0.0, 0.0])[:4]
+    return None
+
+
 class ActionItem(BaseModel):
     type: str
     target_bbox: Optional[List[float]] = None
@@ -87,6 +115,11 @@ class ActionItem(BaseModel):
     text: Optional[str] = None
     url: Optional[str] = None
     reason: Optional[str] = None
+
+    @field_validator("target_bbox", mode="before")
+    @classmethod
+    def validate_target_bbox(cls, v: Any) -> Optional[List[float]]:
+        return normalize_bbox(v)
 
 
 class PlannerMeta(BaseModel):
@@ -382,6 +415,8 @@ def normalize_action_dict(item: Dict[str, Any]) -> Dict[str, Any]:
         norm["target_selector"] = norm["selector"]
     if "target_bbox" not in norm and "bbox" in norm:
         norm["target_bbox"] = norm["bbox"]
+    if "target_bbox" in norm:
+        norm["target_bbox"] = normalize_bbox(norm["target_bbox"])
     if "target_element_id" not in norm and "element_id" in norm:
         norm["target_element_id"] = norm["element_id"]
     if "secret_key" not in norm and "secret_alias" in norm:
@@ -717,6 +752,16 @@ def enrich_plan_actions(
                             action.target_element_id = matched["element_id"]
                         if matched.get("selector"):
                             action.target_selector = matched["selector"]
+
+    # Cap excessive speculative actions (e.g. VLM outputting 5+ speculative clicks)
+    if len(plan_resp.actions) > 2:
+        first = plan_resp.actions[0]
+        second = plan_resp.actions[1]
+        if first.type in ("type", "fill_secret") or second.type in ("press", "submit", "wait", "fill_secret"):
+            plan_resp.actions = [first, second]
+        else:
+            plan_resp.actions = [first]
+
     return plan_resp
 
 

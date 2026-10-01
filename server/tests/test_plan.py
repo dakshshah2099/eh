@@ -1152,3 +1152,36 @@ def test_parse_vlm_response_repairs_pseudo_schema_and_truncation():
     assert plan.actions[0].target_selector is None
     assert plan.actions[0].target_bbox is None
 
+
+def test_enrich_plan_actions_caps_speculative_actions():
+    """Verify that enrich_plan_actions caps hallucinated multi-click sequences down to 1 action."""
+    from vlm_planner import enrich_plan_actions, PlanResponse, ActionItem
+
+    speculative_plan = PlanResponse(
+        actions=[
+            ActionItem(type="click", target_selector="#btn1"),
+            ActionItem(type="click", target_selector="#btn2"),
+            ActionItem(type="click", target_selector="#btn3"),
+            ActionItem(type="click", target_selector="#btn4"),
+        ],
+        task_complete=False,
+    )
+    capped = enrich_plan_actions(speculative_plan, task="browse items")
+    assert len(capped.actions) == 1
+    assert capped.actions[0].target_selector == "#btn1"
+
+    # Type + submit should be preserved as 2 actions
+    type_submit_plan = PlanResponse(
+        actions=[
+            ActionItem(type="type", target_selector="#input", text="query"),
+            ActionItem(type="submit", target_selector="#search-form"),
+            ActionItem(type="click", target_selector="#extra-speculative"),
+        ],
+        task_complete=False,
+    )
+    capped_pair = enrich_plan_actions(type_submit_plan, task="search items")
+    assert len(capped_pair.actions) == 2
+    assert capped_pair.actions[0].type == "type"
+    assert capped_pair.actions[1].type == "submit"
+
+
