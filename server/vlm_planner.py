@@ -167,17 +167,21 @@ Output MUST be a single valid JSON object strictly matching this schema:
   "actions": [
     {
       "type": "click",
-      "target_selector": "#element-id",
+      "target_selector": null,
       "target_bbox": null,
       "target_element_id": null,
       "text": null,
       "url": null,
-      "reason": "short explanation"
+      "reason": null
     }
   ],
   "task_complete": false,
   "confidence": 0.95
 }
+
+CRITICAL RULES:
+- Never output placeholder strings like "#element-id", "element-id", or "short explanation".
+- For targets, provide the REAL element id or CSS selector from the page (or provide reason describing what to click/type).
 
 CRITICAL RULES:
 - If the task requires an interaction (e.g. "play ...", "search ...", "click ...", "type ..."), you MUST emit a "click" or "type" action targeting the appropriate element. Do NOT emit "done" on initial steps before taking an action.
@@ -728,7 +732,16 @@ def enrich_plan_actions(
             ]
             plan_resp.task_complete = False
 
+    PLACEHOLDER_SELECTORS = {"#element-id", "element-id", "#play-btn", "#btn", "#target", "null", "none"}
+    PLACEHOLDER_REASONS = {"short explanation", "explanation", "null", "none", ""}
+
     for action in plan_resp.actions:
+        if action.reason and action.reason.strip().lower() in PLACEHOLDER_REASONS:
+            action.reason = None
+
+        if action.target_selector and action.target_selector.strip().lower() in PLACEHOLDER_SELECTORS:
+            action.target_selector = None
+
         if action.type in ("click", "type", "hover", "press", "fill_secret"):
             has_target = bool(action.target_selector or action.target_bbox or action.target_element_id)
             if not has_target:
@@ -741,6 +754,11 @@ def enrich_plan_actions(
                         action.target_element_id = matched["element_id"]
                     if matched.get("selector") and not action.target_selector:
                         action.target_selector = matched["selector"]
+                    if matched.get("action_type") and action.type == "click" and matched["action_type"] == "type":
+                        action.type = "type"
+                        if not action.text:
+                            # Extract search words from task (e.g. "Too Sweet" from "Play Too Sweet")
+                            action.text = " ".join([w for w in re.split(r"\W+", task) if len(w) > 1 and w.lower() not in ("play", "click", "open", "watch", "listen", "find", "search")])
             elif action.target_selector and not action.target_bbox and not action.target_element_id:
                 sel = str(action.target_selector).strip()
                 if " " in sel and not any(combinator in sel for combinator in (">", "+", "~", "[", "#", ".")):

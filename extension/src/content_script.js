@@ -635,7 +635,11 @@ function resolveTarget(target, options = {}) {
   }
 
   // 2. Try CSS selector
-  const selector = target.target_selector || target.selector || target.cssSelector;
+  let selector = target.target_selector || target.selector || target.cssSelector;
+  const isPlaceholderSel = selector && /^(#?element-id|#?play-btn|#?btn|#?target|null|none)$/i.test(selector.trim());
+  if (isPlaceholderSel) {
+    selector = null;
+  }
   if (selector && typeof selector === 'string') {
     const sel = selector.trim();
     // If it looks like an ID without leading # e.g. "submit-btn" and contains no spaces/special selector chars
@@ -687,6 +691,8 @@ function resolveTarget(target, options = {}) {
   }
 
   // 5. Try finding by element text / label / placeholder / name
+  const isPlaceholderReason = target.reason && /^(short explanation|explanation|null|none)$/i.test(target.reason.trim());
+  const effectiveReason = isPlaceholderReason ? '' : target.reason;
   const searchText = (target.text || target.label || target.name || target.placeholder || target.value || selector || '').trim();
   if (searchText && searchText.length < 100 && !searchText.startsWith('<') && typeof doc.querySelectorAll === 'function') {
     const searchLower = searchText.toLowerCase();
@@ -710,17 +716,17 @@ function resolveTarget(target, options = {}) {
   }
 
   // 6. Semantic search from task description or action reason if still not found
-  const fallbackQuery = (target.reason || options.task || '').toLowerCase();
+  const fallbackQuery = (effectiveReason || options.task || '').toLowerCase();
   if (fallbackQuery && typeof doc.querySelectorAll === 'function') {
-    const interactiveCandidates = Array.from(doc.querySelectorAll('button, input[type="submit"], input[type="button"], [role="button"], a'));
-    for (const kw of ['submit', 'sign in', 'log in', 'login', 'continue', 'search', 'next', 'save', 'send', 'confirm']) {
-      if (fallbackQuery.includes(kw)) {
-        const found = interactiveCandidates.find(c => {
-          const t = (c.innerText || c.textContent || c.value || c.getAttribute('aria-label') || '').toLowerCase();
-          return t.includes(kw);
-        });
-        if (found) return found;
-      }
+    const interactiveCandidates = Array.from(doc.querySelectorAll('button, input[type="submit"], input[type="button"], [role="button"], a, [tabindex]'));
+    const taskKeywords = fallbackQuery.split(/\W+/).filter(w => w.length > 2 && !['the', 'and', 'for', 'with', 'this', 'that', 'from'].includes(w));
+    const actionKeywords = ['play', 'submit', 'sign in', 'log in', 'login', 'continue', 'search', 'next', 'save', 'send', 'confirm', ...taskKeywords];
+    for (const kw of actionKeywords) {
+      const found = interactiveCandidates.find(c => {
+        const t = (c.innerText || c.textContent || c.value || c.getAttribute('aria-label') || c.getAttribute('title') || '').toLowerCase();
+        return t.includes(kw);
+      });
+      if (found) return found;
     }
   }
 
