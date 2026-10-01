@@ -116,6 +116,8 @@ export function buildPayload(options = {}) {
     ? options.nonce.trim()
     : generateNonce();
 
+  const step = typeof options.step === 'number' ? options.step : undefined;
+
   return {
     task,
     dom_skeleton: domSkeleton,
@@ -126,6 +128,7 @@ export function buildPayload(options = {}) {
     redaction_map: redactionMap,
     timestamp,
     nonce,
+    ...(typeof step === 'number' ? { step } : {}),
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
     ...(baseUrl ? { base_url: baseUrl } : {}),
@@ -187,7 +190,7 @@ export async function sendPayloadToServer(payload, serverUrl = DEFAULT_SERVER_UR
 
   if (Array.isArray(planResponse.actions)) {
     for (const action of planResponse.actions) {
-      console.log(`[Transport] Received mock action: [${action.type}] selector="${action.target_selector}" reason="${action.reason}" bbox=${JSON.stringify(action.target_bbox)}`);
+      console.log(`[Transport] Plan action: [${action.type}] selector="${action.target_selector}" reason="${action.reason}" bbox=${JSON.stringify(action.target_bbox)}`);
     }
   }
 

@@ -127,7 +127,7 @@ Available action types:
 - "scroll": direction/delta or target element
 - "wait": wait for navigation/render
 - "navigate": requires url (must be a valid http: or https: URL)
-- "done": signals task completion; return { action: "done", reason: "<why task is complete>" } when the visible page state satisfies the original task goal
+- "done": signals task completion ONLY when the user's task goal has already been fully satisfied and verified on screen.
 
 Output MUST be a single valid JSON object strictly matching this schema:
 {
@@ -147,9 +147,10 @@ Output MUST be a single valid JSON object strictly matching this schema:
   "confidence": number between 0.0 and 1.0
 }
 
-INSTRUCTIONS FOR ACTION GENERATION:
+CRITICAL RULES:
+- If the task requires an interaction (e.g. "play ...", "search ...", "click ...", "type ..."), you MUST emit a "click" or "type" action targeting the appropriate element. Do NOT emit "done" on initial steps before taking an action.
 - Return ONLY the single immediate next action in the "actions" array.
-- Do NOT output placeholder strings like "string or null" or "|". Use actual selectors, IDs, or bounding boxes.
+- Do NOT output placeholder text like "string or null" or "|". Use actual selectors (e.g. '#play-btn', 'input[name="search"]') or bounding boxes from detected elements.
 - For click/type targets, prefer detected element IDs or CSS selectors matching buttons/inputs.
 
 TASK COMPLETION RULE:
@@ -343,7 +344,7 @@ def build_planner_prompt(
             f"{UNTRUSTED_CONTENT_END}\n"
         )
 
-    parts.append("Decide the next action(s) to progress towards completing the task, or emit { action: 'done', reason: '...' } if the visible page state satisfies the task goal. Return JSON only.")
+    parts.append("Determine the immediate next physical action (e.g. click, type, scroll, wait) needed to fulfill the user task. If the goal requires interacting with an element on screen, output the click or type action to proceed. Return raw JSON only.")
     return "\n".join(parts)
 
 
@@ -520,12 +521,30 @@ def match_target_from_context(
     """Searches ui_elements and dom_skeleton for the best matching interactive element based on text/label/tag."""
     if not query:
         return None
-    words = [w.lower() for w in re.split(r"\W+", str(query)) if len(w) > 2]
+    stop_words = {"the", "and", "for", "with", "this", "that", "from", "into"}
+    words = [w.lower() for w in re.split(r"\W+", str(query)) if len(w) > 2 and w.lower() not in stop_words]
     if not words:
         return None
 
-    # 1. Search ui_elements
+    # Filter out generic verbs to prioritize content keywords (e.g. 'handclap' in 'play handclap')
+    generic_verbs = {"play", "click", "search", "open", "watch", "find", "listen", "start", "select"}
+    subject_words = [w for w in words if w not in generic_verbs]
+
+    # 1. Search ui_elements (prioritizing subject words)
     if ui_elements:
+        if subject_words:
+            for elem in ui_elements:
+                if not isinstance(elem, dict):
+                    continue
+                label = str(elem.get("label") or elem.get("text") or "").lower()
+                elem_id = str(elem.get("element_id") or elem.get("id") or "").lower()
+                if any(w in label or w in elem_id for w in subject_words):
+                    return {
+                        "bbox": elem.get("bbox"),
+                        "element_id": elem.get("element_id") or elem.get("id"),
+                        "selector": f"#{elem.get('element_id') or elem.get('id')}" if (elem.get("element_id") or elem.get("id")) else None,
+                        "action_type": "click",
+                    }
         for elem in ui_elements:
             if not isinstance(elem, dict):
                 continue
@@ -536,36 +555,77 @@ def match_target_from_context(
                     "bbox": elem.get("bbox"),
                     "element_id": elem.get("element_id") or elem.get("id"),
                     "selector": f"#{elem.get('element_id') or elem.get('id')}" if (elem.get("element_id") or elem.get("id")) else None,
+                    "action_type": "click",
                 }
 
     # 2. Search dom_skeleton
-    def search_dom(node: Any) -> Optional[Dict[str, Any]]:
+    def search_dom(node: Any, targets: List[str]) -> Optional[Dict[str, Any]]:
         if isinstance(node, list):
             for child in node:
-                res = search_dom(child)
+                res = search_dom(child, targets)
                 if res:
                     return res
         elif isinstance(node, dict):
             text = str(node.get("text") or node.get("innerText") or node.get("value") or "").lower()
             elem_id = str(node.get("id") or "").lower()
             name = str(node.get("name") or "").lower()
+            placeholder = str(node.get("placeholder") or "").lower()
             selector = node.get("selector")
             tag = str(node.get("tag") or node.get("tagName") or "").lower()
 
-            if any(w in text or w in elem_id or w in name for w in words):
+            if any(w in text or w in elem_id or w in name or w in placeholder for w in targets):
                 sel = selector or (f"#{node.get('id')}" if node.get("id") else None) or (f"{tag}[name='{node.get('name')}']" if node.get("name") else None)
+                act_type = "type" if tag in ("input", "textarea") and node.get("type") not in ("button", "submit", "checkbox", "radio") else "click"
                 return {
                     "selector": sel,
                     "element_id": node.get("id"),
                     "bbox": node.get("bbox"),
+                    "action_type": act_type,
                 }
             for child in node.get("children", []):
-                res = search_dom(child)
+                res = search_dom(child, targets)
                 if res:
                     return res
         return None
 
-    return search_dom(dom_skeleton)
+    if subject_words:
+        res = search_dom(dom_skeleton, subject_words)
+        if res:
+            return res
+
+    res = search_dom(dom_skeleton, words)
+    if res:
+        return res
+
+    # 3. If subject words exist but no direct match on page, look for a search input to type into
+    def find_search_input(node: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(node, list):
+            for child in node:
+                r = find_search_input(child)
+                if r:
+                    return r
+        elif isinstance(node, dict):
+            tag = str(node.get("tag") or node.get("tagName") or "").lower()
+            elem_id = str(node.get("id") or "").lower()
+            name = str(node.get("name") or "").lower()
+            placeholder = str(node.get("placeholder") or "").lower()
+            if tag in ("input", "textarea") and (
+                "search" in elem_id or "search" in name or "search" in placeholder or node.get("type") == "search"
+            ):
+                sel = node.get("selector") or (f"#{node.get('id')}" if node.get("id") else None) or "input[type='search'], input[name*='search']"
+                return {
+                    "selector": sel,
+                    "element_id": node.get("id"),
+                    "bbox": node.get("bbox"),
+                    "action_type": "type",
+                }
+            for child in node.get("children", []):
+                r = find_search_input(child)
+                if r:
+                    return r
+        return None
+
+    return find_search_input(dom_skeleton)
 
 
 def enrich_plan_actions(
@@ -573,8 +633,34 @@ def enrich_plan_actions(
     task: str,
     ui_elements: Optional[List[Any]] = None,
     dom_skeleton: Any = None,
+    step: int = 1,
 ) -> PlanResponse:
-    """Enriches actions that lack target locators by matching against UI elements or DOM skeleton."""
+    """Enriches actions that lack target locators by matching against UI elements or DOM skeleton,
+    and prevents premature 'done' actions on early steps when the task requires interaction."""
+    task_lower = task.lower()
+    action_keywords = ("play", "click", "search", "enter", "type", "open", "press", "submit", "select", "find", "watch", "listen", "start")
+    is_actionable = any(kw in task_lower for kw in action_keywords)
+    has_done_action = any(a.type == "done" for a in plan_resp.actions)
+
+    # Prevent premature done on step 1
+    if (is_actionable and step == 1 and (has_done_action or plan_resp.task_complete or len(plan_resp.actions) == 0)):
+        matched = match_target_from_context(task, ui_elements, dom_skeleton)
+        if matched:
+            act_type = matched.get("action_type", "click")
+            type_text = " ".join([w for w in re.split(r"\W+", task) if len(w) > 2 and w.lower() not in ("play", "click", "open", "watch", "listen", "find")]) if act_type == "type" else None
+            logger.info(f"[Planner] Overriding premature 'done' on step {step} with action matching task '{task}'")
+            plan_resp.actions = [
+                ActionItem(
+                    type=act_type,
+                    target_bbox=matched.get("bbox"),
+                    target_element_id=matched.get("element_id"),
+                    target_selector=matched.get("selector"),
+                    text=type_text,
+                    reason=f"Interact with target matching task '{task}'",
+                )
+            ]
+            plan_resp.task_complete = False
+
     for action in plan_resp.actions:
         if action.type in ("click", "type", "hover", "press", "fill_secret"):
             has_target = bool(action.target_selector or action.target_bbox or action.target_element_id)
@@ -807,6 +893,7 @@ def generate_plan(
     base_url: Optional[str] = None,
     api_key: Optional[str] = None,
     redacted_regions: Optional[List[Any]] = None,
+    step: int = 1,
     **kwargs: Any,
 ) -> PlanResponse:
     effective_redactions = redacted_regions if redacted_regions is not None else (redaction_map or [])
@@ -885,12 +972,14 @@ def generate_plan(
         else:
             raise ValueError(f"Unsupported VLM provider: {active_provider}")
 
+        logger.info(f"[VLM Plan Output] (step {step}): {raw_response}")
         plan_resp = parse_vlm_response(raw_response)
         plan_resp = enrich_plan_actions(
             plan_resp=plan_resp,
             task=task,
             ui_elements=ui_elements,
             dom_skeleton=dom_skeleton,
+            step=step,
         )
         plan_resp.planner = PlannerMeta(
             mode="vlm",

@@ -693,7 +693,8 @@ export async function executePipeline(options = {}) {
     baseUrl: options.baseUrl || options.base_url,
     serverKeyMode: options.serverKeyMode,
     session_id: options.session_id || options.sessionId,
-    task_id: options.task_id || options.taskId
+    task_id: options.task_id || options.taskId,
+    step: options.step
   });
 
 

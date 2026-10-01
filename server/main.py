@@ -136,6 +136,7 @@ class PlanRequest(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None
     base_url: Optional[str] = None
+    step: Optional[int] = None
     api_key: Optional[str] = Field(
         default=None,
         deprecated=True,
@@ -473,6 +474,7 @@ def plan(
             base_url=payload.base_url,
             api_key=effective_api_key,
             redacted_regions=payload.redacted_regions,
+            step=current_step,
         )
     except HTTPException:
         raise

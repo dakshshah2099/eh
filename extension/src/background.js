@@ -564,6 +564,7 @@ export async function startLoop(tabId = null, task = '', options = {}) {
         serverKeyMode: opts.serverKeyMode !== undefined ? opts.serverKeyMode : (!clientHasApiKey),
         session_id: sessionId,
         task_id: taskId,
+        step,
         ...(opts.enableVisionInference !== undefined ? { enableVisionInference: opts.enableVisionInference } : {}),
         ...(opts.visionOptions ? { visionOptions: opts.visionOptions } : {}),
         ...(opts.runVisionInference ? { runVisionInference: opts.runVisionInference } : {}),

@@ -1111,3 +1111,26 @@ def test_enrich_plan_actions_resolves_missing_target():
     assert enriched.actions[0].target_element_id == "search-btn"
     assert enriched.actions[0].target_bbox == [100, 200, 80, 40]
     assert enriched.actions[0].target_selector == "#search-btn"
+
+
+def test_premature_done_override_on_step_1():
+    """Verify that a premature 'done' on step 1 for an actionable task is overridden by the matching interactive element."""
+    from vlm_planner import enrich_plan_actions, PlanResponse, ActionItem
+
+    plan = PlanResponse(
+        actions=[ActionItem(type="done", reason="Task is complete")],
+        task_complete=True,
+        confidence=0.9
+    )
+    ui_elements = [
+        {"element_id": "video-item-1", "label": "Handclap Song (Official Video)", "bbox": [50, 100, 300, 200]}
+    ]
+    dom_skeleton = [
+        {"tag": "a", "id": "video-item-1", "text": "Handclap Song (Official Video)"}
+    ]
+
+    enriched = enrich_plan_actions(plan, task="play handclap", ui_elements=ui_elements, dom_skeleton=dom_skeleton, step=1)
+    assert enriched.task_complete is False
+    assert len(enriched.actions) == 1
+    assert enriched.actions[0].type == "click"
+    assert enriched.actions[0].target_element_id == "video-item-1"
